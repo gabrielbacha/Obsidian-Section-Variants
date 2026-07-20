@@ -1,0 +1,157 @@
+import { describe, expect, it } from 'vitest';
+import { FakeApp } from '../test/obsidian-mock';
+import type { App } from 'obsidian';
+import { addStableBlockId, fixMissingClosers, renameVariant } from './mutations';
+import { parseNote } from './parser';
+import { ParsedNote, VariantBlock } from './types';
+
+const parse = (source: string): ParsedNote => parseNote(source, []);
+
+function setup(content: string): {
+	app: App;
+	path: string;
+	read: () => string;
+	firstBlock: () => VariantBlock;
+} {
+	const fake = new FakeApp();
+	const path = 'Note.md';
+	fake.vault.add(path, content);
+	const read = (): string => fake.vault.read(path);
+	return {
+		app: fake as unknown as App,
+		path,
+		read,
+		firstBlock: () => {
+			const block = parse(read()).blocks[0];
+			if (!block) throw new Error('Expected a parsed block.');
+			return block;
+		},
+	};
+}
+
+const TWO_VARIANTS = [
+	':::: variants',
+	'',
+	'::: A',
+	'Alpha.',
+	':::',
+	'',
+	'::: B',
+	'Beta.',
+	':::',
+	'',
+	'::::',
+	'',
+].join('\n');
+
+describe('addStableBlockId', () => {
+	it('appends a block ID after the closing fence', async () => {
+		const { app, path, read, firstBlock } = setup(TWO_VARIANTS);
+
+		const id = await addStableBlockId(app, path, firstBlock(), parse);
+
+		expect(id).toMatch(/^variants-[a-z0-9]{6}$/u);
+		expect(read()).toContain(`::::\n^${id}`);
+	});
+
+	it('leaves the authored content untouched', async () => {
+		const { app, path, read, firstBlock } = setup(TWO_VARIANTS);
+
+		await addStableBlockId(app, path, firstBlock(), parse);
+
+		expect(read()).toContain('Alpha.');
+		expect(read()).toContain('Beta.');
+		expect(parse(read()).blocks[0]?.variants).toHaveLength(2);
+	});
+
+	it('adds a second, distinct ID without disturbing the first', async () => {
+		/*
+		 * A smoke test, not a proof of collision handling: with a 36^6 space a
+		 * natural collision will not occur here. Exercising the retry path would
+		 * need injectable randomness, which `randomId` does not currently expose.
+		 */
+		const { app, path, read, firstBlock } = setup(TWO_VARIANTS);
+		const first = await addStableBlockId(app, path, firstBlock(), parse);
+
+		const second = await addStableBlockId(app, path, firstBlock(), parse);
+
+		expect(second).not.toBe(first);
+		expect(read()).toContain(first);
+		expect(read()).toContain(second);
+	});
+
+	it('refuses to add an ID when the block has no closing fence', async () => {
+		const { app, path, firstBlock } = setup(
+			[':::: variants', '', '::: A', 'Alpha.', ':::', ''].join('\n'),
+		);
+
+		await expect(
+			addStableBlockId(app, path, firstBlock(), parse),
+		).rejects.toThrow(/close the variants block/iu);
+	});
+});
+
+describe('fixMissingClosers', () => {
+	it('appends the missing container fence at end of file', async () => {
+		const { app, path, read, firstBlock } = setup(
+			[':::: variants', '', '::: A', 'Alpha.', ':::', '', '::: B', 'Beta.', ':::'].join(
+				'\n',
+			),
+		);
+
+		await fixMissingClosers(app, path, firstBlock(), parse);
+
+		expect(read().trimEnd().endsWith('::::')).toBe(true);
+		expect(parse(read()).blocks[0]?.valid).toBe(true);
+	});
+
+	it('closes an unterminated variant as well as the container', async () => {
+		const { app, path, read, firstBlock } = setup(
+			[':::: variants', '', '::: A', 'Alpha.', ':::', '', '::: B', 'Beta.'].join('\n'),
+		);
+
+		await fixMissingClosers(app, path, firstBlock(), parse);
+
+		const fixed = parse(read()).blocks[0];
+		expect(fixed?.valid).toBe(true);
+		expect(fixed?.variants).toHaveLength(2);
+	});
+
+	it('refuses when the block is already closed', async () => {
+		const { app, path, firstBlock } = setup(TWO_VARIANTS);
+
+		await expect(
+			fixMissingClosers(app, path, firstBlock(), parse),
+		).rejects.toThrow(/unambiguous/iu);
+	});
+});
+
+describe('renameVariant', () => {
+	it('renames a shorthand label in place', async () => {
+		const { app, path, read, firstBlock } = setup(TWO_VARIANTS);
+
+		await renameVariant(app, path, firstBlock(), 'A', 'Alpha', false, parse);
+
+		const labels = parse(read()).blocks[0]?.variants.map((v) => v.label);
+		expect(labels).toEqual(['Alpha', 'B']);
+	});
+
+	it('switches to the explicit form when the new label needs it', async () => {
+		const { app, path, read, firstBlock } = setup(TWO_VARIANTS);
+
+		await renameVariant(app, path, firstBlock(), 'A', 'Long label', false, parse);
+
+		expect(read()).toContain('label="Long label"');
+		expect(parse(read()).blocks[0]?.variants[0]?.label).toBe('Long label');
+	});
+
+	it('leaves the other variant and its content alone', async () => {
+		const { app, path, read, firstBlock } = setup(TWO_VARIANTS);
+
+		await renameVariant(app, path, firstBlock(), 'A', 'Alpha', false, parse);
+
+		expect(read()).toContain('Alpha.');
+		expect(read()).toContain('Beta.');
+		expect(parse(read()).blocks[0]?.variants[1]?.label).toBe('B');
+	});
+});

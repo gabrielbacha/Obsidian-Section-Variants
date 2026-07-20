@@ -1,0 +1,452 @@
+/*
+ * Section Variants
+ *
+ * Design intent: variant blocks are prose, not widgets. Chrome stays quiet and
+ * out of the way until the user reaches for it, and every colour and metric
+ * comes from an Obsidian theme token so community themes keep working.
+ */
+
+.section-variants-root {
+	--section-variants-min-width: 320px;
+	--section-variants-rule: var(--background-modifier-border);
+	position: relative;
+	margin-block: var(--size-4-4);
+	color: var(--text-normal);
+}
+
+/* ---------------------------------------------------------------- toolbars */
+
+.section-variants-toolbar,
+.section-variants-sticky-control {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-3);
+	min-width: 0;
+}
+
+.section-variants-toolbar {
+	width: fit-content;
+	max-width: 100%;
+	/* No border, no shadow: the segmented pills are the only chrome needed. */
+	margin-block-end: var(--size-2-3);
+}
+
+/*
+ * Hover reveal. Uses opacity rather than `visibility: hidden` — the latter
+ * makes descendants unfocusable, which meant the `:focus-within` below could
+ * never fire and left the reading-view toolbar unreachable by keyboard.
+ */
+.markdown-preview-view:not(.is-mobile)
+	.section-variants-root:not(:hover, :focus-within, .section-variants-toolbar-always)
+	> .section-variants-toolbar {
+	opacity: 0;
+	pointer-events: none;
+}
+
+.markdown-preview-view:not(.is-mobile) .section-variants-toolbar {
+	opacity: 1;
+	transform: translateY(0);
+}
+
+/* ------------------------------------------------------- segmented control */
+
+.section-variants-segmented {
+	display: flex;
+	align-items: center;
+	gap: 1px;
+	min-width: 0;
+	padding: 2px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background: var(--background-secondary);
+	overflow-x: auto;
+	scrollbar-width: none;
+}
+
+.section-variants-segmented::-webkit-scrollbar {
+	display: none;
+}
+
+.section-variants-segment {
+	display: inline-flex;
+	flex: 0 0 auto;
+	align-items: center;
+	justify-content: center;
+	/* `--interactive-normal` is a COLOUR token; using it as a length here made
+	 * the declaration invalid and silently dropped, so buttons sized only to
+	 * their text and looked ragged. */
+	min-height: var(--input-height, 28px);
+	padding: 0 var(--size-2-3);
+	border: 0;
+	border-radius: calc(var(--radius-m) - 2px);
+	background: transparent;
+	box-shadow: none;
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	line-height: 1;
+	white-space: nowrap;
+	cursor: pointer;
+}
+
+.section-variants-segment-icon {
+	padding: 0 var(--size-2-2);
+}
+
+.section-variants-segment-icon .svg-icon {
+	width: var(--icon-s);
+	height: var(--icon-s);
+}
+
+.section-variants-segment:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.section-variants-segment:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: -1px;
+}
+
+/* Quiet selection for the 3-way view switch. */
+.section-variants-segment.is-active {
+	background: var(--background-primary);
+	box-shadow: var(--shadow-s);
+	color: var(--text-normal);
+	font-weight: var(--font-medium);
+}
+
+/* Emphasised selection for the variant labels — the primary choice. */
+.section-variants-segmented.is-emphasized .section-variants-segment.is-active {
+	background: var(--interactive-accent);
+	box-shadow: none;
+	color: var(--text-on-accent);
+}
+
+.section-variants-segmented.is-emphasized
+	.section-variants-segment.is-active:hover {
+	background: var(--interactive-accent-hover);
+}
+
+/* ------------------------------------------------------------- indicators */
+
+.section-variants-difference-indicator {
+	flex: 0 0 auto;
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--interactive-accent);
+}
+
+.section-variants-mixed {
+	flex: 0 0 auto;
+	padding: 2px var(--size-2-2);
+	border-radius: var(--radius-s);
+	background: var(--background-modifier-border);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	white-space: nowrap;
+}
+
+.section-variants-live-mode {
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+	white-space: nowrap;
+}
+
+/*
+ * Offscreen probe used to resolve CSS lengths (rem/em/ch) to pixels. Its width
+ * is set inline at measurement time; everything else lives here.
+ */
+.section-variants-length-probe {
+	position: absolute;
+	visibility: hidden;
+	height: 0;
+	pointer-events: none;
+}
+
+/* ---------------------------------------------------------------- content */
+
+.section-variants-content {
+	min-width: 0;
+}
+
+.section-variants-view-columns {
+	display: grid;
+	grid-template-columns: repeat(
+		auto-fit,
+		minmax(min(100%, var(--section-variants-min-width)), 1fr)
+	);
+	align-items: start;
+	gap: var(--size-4-5);
+}
+
+.section-variants-view-columns.section-variants-columns-stack {
+	grid-template-columns: minmax(0, 1fr) !important;
+}
+
+.section-variants-view-columns.section-variants-columns-scroll,
+.section-variants-content[data-responsive='scroll'] {
+	grid-auto-flow: column;
+	grid-auto-columns: minmax(var(--section-variants-min-width), 1fr);
+	grid-template-columns: none;
+	overflow-x: auto;
+	overscroll-behavior-inline: contain;
+}
+
+/*
+ * Panels carry no frame. Columns are separated by a single hairline so the
+ * note's own typography stays dominant.
+ */
+.section-variants-panel {
+	min-width: 0;
+	padding: 0;
+	border: 0;
+	background: transparent;
+}
+
+.section-variants-view-columns > .section-variants-panel + .section-variants-panel {
+	padding-inline-start: var(--size-4-5);
+	border-inline-start: 1px solid var(--section-variants-rule);
+}
+
+.section-variants-view-toggle > .section-variants-panel.is-inactive,
+.section-variants-view-columns > .section-variants-panel.is-hidden-column {
+	display: none;
+}
+
+.section-variants-column-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--size-2-2);
+	margin-block-end: var(--size-4-2);
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-medium);
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+}
+
+.section-variants-column-header > span {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.section-variants-nested {
+	min-width: 0;
+}
+
+/* ------------------------------------------------------------------ states */
+
+.section-variants-empty {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: var(--size-2-3);
+	grid-column: 1 / -1;
+	padding: var(--size-4-6) var(--size-4-4);
+	border: 1px dashed var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	text-align: center;
+}
+
+.section-variants-empty .svg-icon {
+	width: var(--icon-l);
+	height: var(--icon-l);
+	color: var(--text-faint);
+}
+
+.section-variants-warning {
+	display: inline-flex;
+	margin-inline-start: var(--size-2-2);
+	color: var(--text-warning);
+	vertical-align: middle;
+}
+
+.section-variants-inactive-placeholder,
+.section-variants-done-editing {
+	display: block;
+	width: 100%;
+	min-height: var(--input-height, 28px);
+	margin-block: var(--size-2-2);
+	padding: var(--size-2-1) var(--size-2-3);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background: var(--background-secondary);
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	text-align: start;
+	white-space: nowrap;
+	cursor: pointer;
+}
+
+.section-variants-inactive-placeholder:hover,
+.section-variants-done-editing:hover {
+	border-color: var(--background-modifier-border-hover);
+	color: var(--text-normal);
+}
+
+.section-variants-inactive-placeholder:focus-visible,
+.section-variants-done-editing:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: -1px;
+}
+
+/* ------------------------------------------------------------ live preview */
+
+.section-variants-live-widget {
+	box-sizing: border-box;
+	width: 100%;
+	margin-block: var(--size-2-2);
+}
+
+.section-variants-live-widget .section-variants-toolbar {
+	opacity: 1;
+	pointer-events: auto;
+}
+
+/* ---------------------------------------------------------- sticky control */
+
+.section-variants-sticky-control {
+	position: absolute;
+	z-index: var(--layer-popover);
+	top: calc(var(--size-4-2) + env(safe-area-inset-top, 0px));
+	right: calc(var(--size-4-2) + env(safe-area-inset-right, 0px));
+	max-width: calc(100% - var(--size-4-8));
+	padding: var(--size-2-2);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background: var(--background-primary);
+	box-shadow: var(--shadow-s);
+	overflow-x: auto;
+}
+
+/* ----------------------------------------------------------------- modals */
+
+.section-variants-modal-error,
+.section-variants-setting-error .setting-item-description {
+	color: var(--text-error);
+}
+
+.section-variants-modal-error:not(:empty) {
+	margin-block: var(--size-4-2);
+	padding: var(--size-2-3);
+	border: 1px solid var(--background-modifier-error);
+	border-radius: var(--radius-s);
+	background: var(--background-modifier-error-hover);
+}
+
+.section-variants-rename-fields {
+	margin-block-start: var(--size-4-2);
+}
+
+/* ----------------------------------------------------------------- motion */
+
+@media (prefers-reduced-motion: no-preference) {
+	.section-variants-toolbar {
+		transition:
+			opacity var(--anim-duration-fast, 140ms) ease,
+			transform var(--anim-duration-fast, 140ms) ease;
+	}
+
+	.markdown-preview-view:not(.is-mobile)
+		.section-variants-root:not(
+			:hover,
+			:focus-within,
+			.section-variants-toolbar-always
+		)
+		> .section-variants-toolbar {
+		transform: translateY(-2px);
+	}
+
+	.section-variants-segment {
+		transition:
+			background-color var(--anim-duration-fast, 140ms) ease,
+			color var(--anim-duration-fast, 140ms) ease;
+	}
+
+	.section-variants-view-columns {
+		transition: grid-template-columns var(--anim-duration-moderate, 220ms) ease;
+	}
+
+	/* Crossfade the variant that comes into view on switch. */
+	.section-variants-panel:not(.is-inactive, .is-hidden-column) {
+		animation: section-variants-fade-in var(--anim-duration-fast, 140ms) ease;
+	}
+}
+
+@keyframes section-variants-fade-in {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
+}
+
+/* ----------------------------------------------------------------- mobile */
+
+body.is-mobile .section-variants-toolbar {
+	opacity: 1;
+	width: 100%;
+	overflow-x: auto;
+	pointer-events: auto;
+}
+
+/* Touch targets. `isDesktopOnly` is false, so these must clear 44px. */
+body.is-mobile .section-variants-segment,
+body.is-mobile .section-variants-inactive-placeholder,
+body.is-mobile .section-variants-done-editing {
+	min-height: 44px;
+}
+
+body.is-mobile
+	.section-variants-view-columns:not(.section-variants-columns-scroll) {
+	grid-template-columns: minmax(0, 1fr) !important;
+}
+
+/* Stacked columns get a top rule instead of a side rule. */
+body.is-mobile
+	.section-variants-view-columns:not(.section-variants-columns-scroll)
+	> .section-variants-panel
+	+ .section-variants-panel {
+	padding-inline-start: 0;
+	padding-block-start: var(--size-4-4);
+	border-inline-start: 0;
+	border-block-start: 1px solid var(--section-variants-rule);
+}
+
+/* ------------------------------------------------------------------ print */
+
+@media print {
+	.section-variants-toolbar,
+	.section-variants-sticky-control,
+	.section-variants-column-header button,
+	.section-variants-warning {
+		display: none !important;
+	}
+
+	.section-variants-root[data-authored-view='toggle'] .section-variants-panel {
+		display: none !important;
+	}
+
+	.section-variants-root[data-authored-view='toggle']
+		.section-variants-panel[data-authored-default='true'] {
+		display: block !important;
+	}
+
+	.section-variants-root[data-authored-view='columns'] .section-variants-panel,
+	.section-variants-root[data-authored-view='auto'] .section-variants-panel {
+		display: block !important;
+	}
+
+	.section-variants-root[data-authored-view='columns'] .section-variants-content,
+	.section-variants-root[data-authored-view='auto'] .section-variants-content {
+		display: grid !important;
+		grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)) !important;
+		overflow: visible !important;
+	}
+}
