@@ -66,8 +66,11 @@ export class SectionVariantsSettingTab extends PluginSettingTab {
 				'stickyControlEnabled',
 			),
 			{
-				name: 'Reading view toolbar',
+				name: 'Toolbar visibility',
 				desc: 'Reveal the block toolbar on hover and focus, or keep it always visible.',
+				// The old name ("Reading view toolbar") never contained the word
+				// users search for.
+				aliases: ['hover', 'always visible', 'reveal on hover', 'reading view'],
 				control: {
 					type: 'dropdown',
 					key: 'toolbarVisibility',
@@ -155,6 +158,24 @@ export class SectionVariantsSettingTab extends PluginSettingTab {
 		if (!('control' in definition)) return;
 		const { control } = definition;
 		if (!control) return;
+
+		/*
+		 * Bail before creating the row for anything this tab cannot render.
+		 * Returning after `new Setting(...)` produced a row with a name and
+		 * description but no control at all, which looks functional and is a
+		 * worse failure than omitting it.
+		 */
+		if (
+			control.type !== 'toggle' &&
+			control.type !== 'dropdown' &&
+			control.type !== 'text'
+		) {
+			console.warn(
+				`Section Variants: no legacy renderer for "${control.type}" (setting "${definition.name}"). Add one to renderDefinition.`,
+			);
+			return;
+		}
+
 		const setting = new Setting(this.containerEl).setName(definition.name);
 		if (definition.desc) setting.setDesc(definition.desc);
 
@@ -183,8 +204,6 @@ export class SectionVariantsSettingTab extends PluginSettingTab {
 			return;
 		}
 
-		// Only these three control types are used by this tab.
-		if (control.type !== 'text') return;
 		const { key, validate } = control;
 		const baseDesc = definition.desc ?? '';
 		setting.addText((text) =>

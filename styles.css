@@ -204,10 +204,17 @@
 	background: transparent;
 }
 
-.section-variants-view-columns > .section-variants-panel + .section-variants-panel {
-	padding-inline-start: var(--size-4-5);
-	border-inline-start: 1px solid var(--section-variants-rule);
-}
+/*
+ * Columns are separated by the grid gap alone.
+ *
+ * A previous version added `padding-inline-start` equal to the gap plus a
+ * `border-inline-start`. That indented every column after the first by 20px
+ * while column 1 sat flush at its track edge, so text did not line up and the
+ * later columns had narrower content boxes. `+` is also a DOM-order combinator,
+ * so when `auto-fit` wrapped the tracks the first panel of each new row drew a
+ * rule against empty space. Gap-only separation has neither problem, and the
+ * uppercase column header already delineates each column.
+ */
 
 .section-variants-view-toggle > .section-variants-panel.is-inactive,
 .section-variants-view-columns > .section-variants-panel.is-hidden-column {
@@ -269,6 +276,9 @@
 .section-variants-inactive-placeholder,
 .section-variants-done-editing {
 	display: block;
+	/* Without border-box the padding and border are added to the 100%, so the
+	 * button overflowed its container and was clipped on the right. */
+	box-sizing: border-box;
 	width: 100%;
 	min-height: var(--input-height, 28px);
 	margin-block: var(--size-2-2);
@@ -297,15 +307,38 @@
 
 /* ------------------------------------------------------------ live preview */
 
+/*
+ * A `block: true` replace widget is a sibling of `.cm-line`, not a child, so it
+ * does not pick up the line's inline padding and would otherwise hang left of
+ * the surrounding text. These values mirror CodeMirror's base theme
+ * (`.cm-line { padding: 0 2px 0 6px }`, @codemirror/view baseTheme) so the
+ * widget's left edge lines up with body text.
+ */
 .section-variants-live-widget {
 	box-sizing: border-box;
 	width: 100%;
 	margin-block: var(--size-2-2);
+	padding-inline: 6px 2px;
 }
 
+/*
+ * Live-preview toolbars honour the same visibility setting as reading view.
+ * They were previously pinned visible unconditionally, which made the setting
+ * appear to do nothing for anyone working in Live Preview.
+ */
 .section-variants-live-widget .section-variants-toolbar {
 	opacity: 1;
 	pointer-events: auto;
+}
+
+.section-variants-live-widget:not(
+		:hover,
+		:focus-within,
+		.section-variants-toolbar-always
+	)
+	> .section-variants-toolbar {
+	opacity: 0;
+	pointer-events: none;
 }
 
 /* ---------------------------------------------------------- sticky control */
@@ -408,14 +441,16 @@ body.is-mobile
 	grid-template-columns: minmax(0, 1fr) !important;
 }
 
-/* Stacked columns get a top rule instead of a side rule. */
+/*
+ * Stacked columns get a top rule. Safe to use `+` here in a way it is not on
+ * desktop: the grid is forced to a single column above, so DOM order and
+ * visual order always agree and no panel can start a new row.
+ */
 body.is-mobile
 	.section-variants-view-columns:not(.section-variants-columns-scroll)
 	> .section-variants-panel
 	+ .section-variants-panel {
-	padding-inline-start: 0;
 	padding-block-start: var(--size-4-4);
-	border-inline-start: 0;
 	border-block-start: 1px solid var(--section-variants-rule);
 }
 
@@ -429,22 +464,34 @@ body.is-mobile
 		display: none !important;
 	}
 
-	.section-variants-root[data-authored-view='toggle'] .section-variants-panel {
+	/*
+	 * Scoped with `>` through the content wrapper. With a descendant
+	 * combinator an outer block authored as `toggle` also hid every panel of a
+	 * nested block, including one authored as `columns`.
+	 */
+	.section-variants-root[data-authored-view='toggle']
+		> .section-variants-content
+		> .section-variants-panel {
 		display: none !important;
 	}
 
 	.section-variants-root[data-authored-view='toggle']
-		.section-variants-panel[data-authored-default='true'] {
+		> .section-variants-content
+		> .section-variants-panel[data-authored-default='true'] {
 		display: block !important;
 	}
 
-	.section-variants-root[data-authored-view='columns'] .section-variants-panel,
-	.section-variants-root[data-authored-view='auto'] .section-variants-panel {
+	.section-variants-root[data-authored-view='columns']
+		> .section-variants-content
+		> .section-variants-panel,
+	.section-variants-root[data-authored-view='auto']
+		> .section-variants-content
+		> .section-variants-panel {
 		display: block !important;
 	}
 
-	.section-variants-root[data-authored-view='columns'] .section-variants-content,
-	.section-variants-root[data-authored-view='auto'] .section-variants-content {
+	.section-variants-root[data-authored-view='columns'] > .section-variants-content,
+	.section-variants-root[data-authored-view='auto'] > .section-variants-content {
 		display: grid !important;
 		grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)) !important;
 		overflow: visible !important;
