@@ -202,35 +202,34 @@ The default is `responsive`.
 
 ## 8. Per-block controls
 
-Each valid rendered block has a quiet border and a compact layers marker. Hovering or focusing the block reveals only its variant labels:
+Each valid rendered block has a quiet continuous border and a compact layers marker. Hovering or focusing the block reveals its variant labels and view choices:
 
 ```text
-                    A | B | C    ◉
+      A | B | C    Toggle | Columns | Auto    ◉
 ```
 
 Behavior:
 
 - clicking a label changes that block
 - `Shift + click` applies the label to every matching block in the note
-- the marker menu exposes:
-  - toggle, columns, and auto view modes
+- the hover/focus surface exposes toggle, columns, and auto view modes
+- the marker menu contains exactly:
   - follow global state
-  - reset this block
+  - reset to authored defaults
   - authored-default configuration
   - variant renaming
-  - column visibility persistence
-  - stable-ID creation when needed
+- focused-block commands provide column visibility persistence, restoration, and stable-ID creation
 
 The controls:
 
 - leave only the layers marker visible at rest
-- reveal labels on hover or keyboard focus on hover-capable devices
+- reveal labels and views on hover or keyboard focus on hover-capable devices
 - keep labels and 44px targets available on touch devices
 - use theme-native neutral states rather than accent-filled selection pills
 
 ## 9. Note-wide control
 
-An optional sticky control provides note-level switching. It follows the same pattern: a small top-right layers marker at rest and note-wide labels on hover or focus.
+An optional sticky control provides note-level switching. It follows the same pattern: a small bottom-right layers marker at rest and note-wide labels and views expanding left on hover or focus. Per-view measurement keeps it above Obsidian's actual status bar, while safe-area offsets keep it clear of device chrome. Measurement uses each view's owner document so pop-out windows remain independent.
 
 It shows the union of labels across the note, ordered by first appearance.
 
@@ -304,13 +303,10 @@ When current state differs from the authored default, the marker shows a subtle 
 
 The sticky note control also shows an indicator when any block differs.
 
-Hover reveals details such as:
+The concise marker tooltip reports the useful state on one line, for example:
 
 ```text
-Current variant: B
-Default variant: A
-Current view: columns
-Default view: toggle
+B · Columns · default A / Toggle
 ```
 
 No detailed text is shown until hover or focus.
@@ -329,13 +325,15 @@ No detailed text is shown until hover or focus.
 
 ### Live Preview
 
-Inactive variants are fully hidden; the label selector is the only switcher needed.
+Inactive variants are fully hidden. Every valid block is replaced by one atomic `LiveBlockWidget` whose root owns the toolbar and visible content. Toggle mode mounts the selected variant as an editable fragment; Columns mode mounts every visible column as an equivalent live fragment, and its A/B controls independently show or hide columns. A single inset content outline replaces the redundant outer frame. Because the content frame and editors share one measured DOM tree, repeated LF, CRLF, and empty-content updates cannot detach the border or hover controls.
 
-In columns mode, Live Preview displays rendered columns. Selecting **Edit** on a column reveals that variant's source below the preview while the remaining columns stay rendered. Selecting **Done editing** from the marker menu or pressing `Escape` returns to the compact preview.
+Each editable fragment derives its state from the owning Obsidian editor so headings, emphasis, links, lists, Live Preview syntax behavior, theme compartments, and accessibility settings remain intact. All visible Columns panels remain directly editable without an activation step. Valid nested variant blocks remain rendered between editable prose islands. Links, checkboxes, embeds, buttons, and nested controls retain their normal behavior.
+
+Nested-editor transactions map back to absolute ranges in the owning Obsidian editor, so changes use the note's normal undo history and the outer boundary guard. The editors survive ordinary outer-document updates by rebinding their absolute spans and preserving focus and selection. A truly empty variant gains its required trailing newline with the first insertion. `Escape` returns focus to the owning editor; hiding a column or leaving Columns view removes only the fragments that are no longer visible.
 
 Editor transactions inside a valid rendered block must fit wholly inside one currently editable variant-content span. Nested blocks are removed from their parent's editable spans and expose only their own selected content. This makes Backspace at the opening boundary and Delete at the closing boundary no-ops, keeps typing at the bottom before the closing fence, and rejects selections, paste, cut, drop, undo, redo, or multi-cursor changes that cross a hidden fence or adjacent variant.
 
-Hidden fences and inactive ranges are line-aligned through CodeMirror document lines, safe for LF and CRLF, and registered as atomic ranges in addition to the transaction guard. Widget equality includes absolute block offsets so edits above a block cannot leave stale selection anchors. Escape has elevated keymap precedence, toolbar actions restore editor focus only when it was already focused, and Shift-select applies a label across valid blocks in the note.
+The whole valid block replacement is line-aligned through CodeMirror document lines, safe for LF and CRLF, and registered as an atomic range in addition to the transaction guard. Widget equality includes absolute block offsets so edits above a block cannot leave stale selection anchors. Escape has elevated keymap precedence, toolbar actions restore editor focus only when it was already focused, and Shift-select applies a label across valid blocks in the note.
 
 ### Source Mode
 
@@ -436,6 +434,9 @@ The plugin registers commands for:
 - Reset focused block
 - Reset all blocks to defaults
 - Toggle sticky note control
+- Add stable block ID
+- Save focused column visibility
+- Restore focused columns
 
 No keyboard shortcuts are assigned by default.
 

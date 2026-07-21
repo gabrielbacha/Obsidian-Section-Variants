@@ -43,11 +43,31 @@ export function editableSpansForVariant(
 	const spans: EditableSpan[] = [];
 	let cursor = variant.content.from;
 	for (const child of children) {
-		const from = Math.max(cursor, child.range.from);
+		let childBoundary = child.range.from;
+		// Protect the line break that makes the nested opening fence a block.
+		// Without this, Backspace at the end of the preceding prose island could
+		// join the fence onto prose even though the fence text itself is excluded.
+		if (
+			childBoundary > cursor &&
+			source.charCodeAt(childBoundary - 1) === 10
+		) {
+			childBoundary -= 1;
+			if (
+				childBoundary > cursor &&
+				source.charCodeAt(childBoundary - 1) === 13
+			) {
+				childBoundary -= 1;
+			}
+		}
+		const from = Math.max(cursor, childBoundary);
 		if (from >= variant.content.from && from <= contentEnd) {
 			spans.push({ from: cursor, to: from });
 		}
 		cursor = Math.max(cursor, child.range.to);
+		// Likewise, keep the line break after the nested closing fence out of the
+		// following prose editor so Delete cannot join following prose to it.
+		if (source.charCodeAt(cursor) === 13) cursor += 1;
+		if (source.charCodeAt(cursor) === 10) cursor += 1;
 	}
 	if (cursor <= contentEnd) {
 		spans.push({ from: cursor, to: contentEnd });

@@ -20,24 +20,23 @@ import {
 	Component,
 	editorInfoField,
 	editorLivePreviewField,
-	MarkdownRenderer,
 	Notice,
+	setIcon,
 } from 'obsidian';
-import { normalizeLabel, VariantBlock, VariantSection } from '../core/types';
+import { VariantBlock, VariantSection } from '../core/types';
 import { SectionVariantsHost } from '../plugin-host';
-import { VariantBlockRenderer } from '../ui/block-renderer';
-import { blockMarkerTooltip, openBlockMenu } from '../ui/block-menu';
-import { createSegmentedControl } from '../ui/segmented-control';
+import { createBlockControls } from '../ui/block-controls';
 import { hasRoomForColumns, resolveLengthPx } from '../ui/css-length';
-import { createVariantMarker } from '../ui/variant-marker';
 import {
 	changesAreWithinEditableSpans,
 	DocumentChange,
 	EditableSpan,
 	editableSpansForVariant,
 } from './edit-boundaries';
-import { blockSpan, fenceLineRange } from './ranges';
-import { dispatchAndRestoreFocus, isNoteWideSelection } from './interactions';
+import { blockSpan } from './ranges';
+import { isNoteWideSelection } from './interactions';
+import { InlineColumnEditor } from './inline-column-editor';
+import { liveEditableVariants } from './live-variants';
 import { widgetPositionIdentity } from './widget-identity';
 
 const refreshEffect = StateEffect.define<void>();
@@ -150,6 +149,7 @@ export function createLivePreviewExtension(
 				this.view.dispatch({ effects: editorWidthEffect.of(width) });
 			}, 0);
 		}
+
 	}
 
 	return [
@@ -230,24 +230,25 @@ function collectEditableSpans(
 					? 'columns'
 					: 'toggle'
 				: state.view;
-		const editingLabel = host.store.getEditingVariant(path, block);
-		if (mode === 'columns' && !editingLabel) continue;
-		const activeLabel = editingLabel ?? state.selectedLabel;
-		const active = block.variants.find(
-			(variant) =>
-				variant.normalizedLabel === normalizeLabel(activeLabel),
+		const editable = liveEditableVariants(
+			block,
+			mode,
+			state.selectedLabel,
+			state.hiddenLabels,
 		);
-		if (!active?.closing) continue;
-		spans.push(...editableSpansForVariant(active, source));
-		spans.push(
-			...collectEditableSpans(
-				host,
-				editorWidth,
-				path,
-				source,
-				active.children,
-			),
-		);
+		for (const variant of editable) {
+			if (!variant.closing) continue;
+			spans.push(...editableSpansForVariant(variant, source));
+			spans.push(
+				...collectEditableSpans(
+					host,
+					editorWidth,
+					path,
+					source,
+					variant.children,
+				),
+			);
+		}
 	}
 	return spans;
 }
@@ -311,103 +312,31 @@ function decorateBlock(
 			block.variants.length,
 		);
 	const mode = state.view === 'auto' ? (autoColumns ? 'columns' : 'toggle') : state.view;
-	const editingLabel = host.store.getEditingVariant(path, block);
-
-	if (mode === 'columns' && !editingLabel) {
-		const span = blockSpan(doc, block.opening.from, block.closing.from);
-		ranges.push(
-			Decoration.replace({
-				block: true,
-				widget: new LiveBlockWidget(host, path, source, block, 'columns'),
-			}).range(span.from, span.to),
-		);
-		return;
-	}
-
-	const openingSpan = blockSpan(doc, block.opening.from, block.opening.from);
-	ranges.push(
-		Decoration.replace({
-			block: true,
-			widget: new LiveBlockWidget(
-				host,
-				path,
-				source,
-				block,
-				editingLabel ? 'editing-columns' : 'toolbar',
-			),
-		}).range(openingSpan.from, openingSpan.to),
-	);
-	hideFence(doc, block.closing.from, ranges, atomicRanges);
-
-	const activeLabel = editingLabel ?? state.selectedLabel;
-	for (const variant of block.variants) {
-		if (!variant.closing) continue;
-		const active = variant.normalizedLabel === normalizeLabel(activeLabel);
-		if (!active) {
-			const span = blockSpan(doc, variant.opening.from, variant.closing.from);
-			const decoration = Decoration.replace({ block: true });
-			ranges.push(decoration.range(span.from, span.to));
-			atomicRanges.push(decoration.range(span.from, span.to));
-			continue;
-		}
-		hideFence(doc, variant.opening.from, ranges, atomicRanges);
-		hideFence(doc, variant.closing.from, ranges, atomicRanges);
-		addLivePreviewBorder(source, variant, ranges);
-		for (const child of variant.children) {
-			decorateBlock(
-				host,
-				doc,
-				editorWidth,
-				path,
-				source,
-				child,
-				ranges,
-				atomicRanges,
-			);
-		}
-	}
-}
-
-function hideFence(
-	doc: EditorState['doc'],
-	from: number,
-	ranges: Range<Decoration>[],
-	atomicRanges: Range<Decoration>[],
-): void {
-	const span = fenceLineRange(doc, from);
-	if (span.to <= span.from) return;
-	const decoration = Decoration.replace({});
+	const span = blockSpan(doc, block.opening.from, block.closing.from);
+	const widgetMode: LiveWidgetMode = mode === 'toggle' ? 'toggle' : 'columns';
+	const decoration = Decoration.replace({
+		block: true,
+		widget: new LiveBlockWidget(host, path, source, block, widgetMode),
+	});
 	ranges.push(decoration.range(span.from, span.to));
 	atomicRanges.push(decoration.range(span.from, span.to));
 }
 
-function addLivePreviewBorder(
-	source: string,
-	variant: VariantSection,
-	ranges: Range<Decoration>[],
-): void {
-	if (variant.content.from >= variant.content.to) return;
-	const lineStarts = [variant.content.from];
-	for (let offset = variant.content.from; offset < variant.content.to - 1; offset += 1) {
-		if (source.charCodeAt(offset) === 10) lineStarts.push(offset + 1);
-	}
-	lineStarts.forEach((lineStart, index) => {
-		const classes = ['section-variants-live-border-line'];
-		if (index === 0) classes.push('is-start');
-		if (index === lineStarts.length - 1) classes.push('is-end');
-		ranges.push(
-			Decoration.line({ attributes: { class: classes.join(' ') } }).range(
-				lineStart,
-			),
-		);
-	});
+type LiveWidgetMode = 'toggle' | 'columns';
+
+interface LiveWidgetResources {
+	component: Component;
+	inlines: Map<string, InlineColumnEditor>;
+	uiSignature: string;
+	staticContentSignature: string;
 }
 
-type LiveWidgetMode = 'toolbar' | 'columns' | 'editing-columns';
+const liveWidgetResources = new WeakMap<HTMLElement, LiveWidgetResources>();
 
 class LiveBlockWidget extends WidgetType {
-	private readonly components = new WeakMap<HTMLElement, Component>();
 	private readonly signature: string;
+	private readonly uiSignature: string;
+	private readonly staticContentSignature: string;
 
 	constructor(
 		private readonly host: SectionVariantsHost,
@@ -423,18 +352,29 @@ class LiveBlockWidget extends WidgetType {
 		 * store state and always compare equal — the widget would never update.
 		 */
 		const state = host.store.resolve(path, block);
-		this.signature = [
-			path,
-			block.identityKey,
-			widgetPositionIdentity(block),
+		this.uiSignature = [
 			mode,
 			state.selectedLabel,
 			state.view,
+			String(state.differsFromAuthored),
+			String(host.store.settings.showIndicators),
 			state.responsive,
 			state.minWidth,
 			state.widths ?? '',
 			[...state.hiddenLabels].sort().join(','),
-			host.store.getEditingVariant(path, block) ?? '',
+			block.variants.map((variant) => variant.label).join('\u0001'),
+		].join('\u0000');
+		const editable = editableVariantsForMode(host, path, block, mode);
+		this.staticContentSignature = staticVariantSignature(
+			source,
+			block,
+			editable,
+		);
+		this.signature = [
+			path,
+			block.identityKey,
+			widgetPositionIdentity(block),
+			this.uiSignature,
 			// Content, so edits inside the block still rebuild it.
 			block.closing
 				? source.slice(block.opening.from, block.closing.to)
@@ -447,181 +387,222 @@ class LiveBlockWidget extends WidgetType {
 	}
 
 	toDOM(view: EditorView): HTMLElement {
-		const root = createDiv();
+		const root = createOwnerDocumentDiv(view.dom);
 		root.addClass(
 			'section-variants-root',
 			'section-variants-live-widget',
 			`section-variants-live-${this.mode}`,
 		);
-		if (this.mode === 'toolbar') {
-			this.renderToolbar(root, view, false);
-			return root;
-		}
-
-		this.renderToolbar(root, view, this.mode === 'editing-columns');
+		root.dataset.blockKey = this.block.identityKey;
+		renderLiveToolbar(this.host, this.path, this.block, this.mode, root, view);
 		const component = new Component();
 		component.load();
-		this.components.set(root, component);
-		const columns = root.createDiv({
-			cls: 'section-variants-content section-variants-view-columns',
+		const resources: LiveWidgetResources = {
+			component,
+			inlines: new Map(),
+			uiSignature: this.uiSignature,
+			staticContentSignature: this.staticContentSignature,
+		};
+		liveWidgetResources.set(root, resources);
+		const contentMode = this.mode === 'toggle' ? 'toggle' : 'columns';
+		root.dataset.currentView = contentMode;
+		const content = root.createDiv({
+			cls: `section-variants-content section-variants-view-${contentMode}`,
 		});
 		const state = this.host.store.resolve(this.path, this.block);
-		columns.dataset.responsive = state.responsive;
-		columns.style.setProperty('--section-variants-min-width', state.minWidth);
+		content.dataset.responsive = state.responsive;
+		content.style.setProperty('--section-variants-min-width', state.minWidth);
+		if (this.mode === 'toggle') {
+			const variant = editableVariantsForMode(
+				this.host,
+				this.path,
+				this.block,
+				this.mode,
+			)[0];
+			if (variant) {
+				const panel = content.createDiv({ cls: 'section-variants-panel is-editing' });
+				panel.dataset.label = variant.label;
+				resources.inlines.set(variant.normalizedLabel, new InlineColumnEditor({
+					host: this.host,
+					path: this.path,
+					source: this.source,
+					variant,
+					outerView: view,
+					parent: panel,
+					component,
+					onExit: () => undefined,
+				}));
+			}
+			return root;
+		}
 		if (
 			state.widths &&
 			!/[;{}]/u.test(state.widths) &&
-			window.CSS?.supports('grid-template-columns', state.widths)
+			root.ownerDocument.defaultView?.CSS?.supports(
+				'grid-template-columns',
+				state.widths,
+			)
 		) {
-			columns.style.gridTemplateColumns = state.widths;
+			content.style.gridTemplateColumns = state.widths;
 		}
 		for (const variant of this.block.variants) {
 			if (state.hiddenLabels.has(variant.normalizedLabel)) continue;
-			const panel = columns.createDiv({ cls: 'section-variants-panel' });
+			const panel = content.createDiv({ cls: 'section-variants-panel' });
+			panel.dataset.label = variant.label;
 			const header = panel.createDiv({ cls: 'section-variants-column-header' });
 			header.createSpan({ text: variant.label });
-			const edit = header.createEl('button', {
+			const hide = header.createEl('button', {
 				type: 'button',
-				cls: 'mod-cta',
-				text: 'Edit',
-				attr: { 'aria-label': `Edit ${variant.label}` },
+				cls: 'clickable-icon',
+				attr: { 'aria-label': `Hide ${variant.label} column` },
 			});
-			edit.addEventListener('click', () => {
-				void this.editVariant(view, variant);
+			setIcon(hide, 'eye-off');
+			hide.addEventListener('click', () => {
+				this.host.store.toggleHidden(this.path, this.block, variant.label);
 			});
-			void renderVariantPreview(
-				this.host,
-				this.path,
-				this.source,
+			panel.addClass('is-editing');
+			resources.inlines.set(variant.normalizedLabel, new InlineColumnEditor({
+				host: this.host,
+				path: this.path,
+				source: this.source,
 				variant,
-				panel,
+				outerView: view,
+				parent: panel,
 				component,
-			);
+				onExit: () => undefined,
+			}));
+		}
+		if (content.childElementCount === 0) {
+			const empty = content.createDiv({ cls: 'section-variants-empty' });
+			setIcon(empty.createSpan(), 'layers');
+			empty.createSpan({ text: 'All columns are hidden.' });
+			const restore = empty.createEl('button', {
+				type: 'button',
+				text: 'Restore columns',
+			});
+			restore.addEventListener('click', () => {
+				this.host.store.restoreColumns(this.path, this.block);
+			});
 		}
 		return root;
 	}
 
+	updateDOM(dom: HTMLElement, view: EditorView): boolean {
+		const resources = liveWidgetResources.get(dom);
+		if (
+			!resources ||
+			resources.uiSignature !== this.uiSignature ||
+			resources.staticContentSignature !== this.staticContentSignature
+		) {
+			return false;
+		}
+		const variants = editableVariantsForMode(
+			this.host,
+			this.path,
+			this.block,
+			this.mode,
+		);
+		if (resources.inlines.size !== variants.length) return false;
+		for (const variant of variants) {
+			const inline = resources.inlines.get(variant.normalizedLabel);
+			if (!inline?.rebind(this.source, variant, view)) return false;
+		}
+		dom.dataset.blockKey = this.block.identityKey;
+		return true;
+	}
+
 	destroy(dom: HTMLElement): void {
-		this.components.get(dom)?.unload();
+		const resources = liveWidgetResources.get(dom);
+		for (const inline of resources?.inlines.values() ?? []) inline.destroy();
+		resources?.component.unload();
+		liveWidgetResources.delete(dom);
 	}
 
 	ignoreEvent(): boolean {
-		return false;
+		// The widget owns its controls, rendered links, and nested CodeMirror
+		// editors. Letting the outer editor interpret these events steals the
+		// activation click before a column can enter editing mode.
+		return true;
 	}
 
-	private renderToolbar(
-		root: HTMLElement,
-		view: EditorView,
-		showDone: boolean,
-	): void {
-		const toolbar = root.createDiv({ cls: 'section-variants-toolbar' });
-		toolbar.setAttribute('role', 'toolbar');
-		toolbar.setAttribute('aria-label', 'Section variants in live preview');
-		const state = this.host.store.resolve(this.path, this.block);
-		const finishEditing = (): void => {
-			this.host.store.setEditingVariant(this.path, this.block);
-			dispatchAndRestoreFocus(view, { effects: refreshEffect.of() });
-		};
-		createVariantMarker(toolbar, {
-			ariaLabel: 'Open variants menu',
-			tooltip: blockMarkerTooltip(this.host, this.path, this.block),
-			differs:
-				state.differsFromAuthored && this.host.store.settings.showIndicators,
-			onClick: (event) =>
-				openBlockMenu(this.host, this.path, this.block, event, {
-					...(showDone ? { onDoneEditing: finishEditing } : {}),
-				}),
-		});
-		const active = this.block.variants.find(
-			(variant) => variant.normalizedLabel === normalizeLabel(state.selectedLabel),
-		);
-		createSegmentedControl(toolbar, {
-			cls: 'section-variants-labels',
-			ariaLabel: 'Variant',
-			value: active?.label,
-			options: this.block.variants.map((variant) => ({
-				value: variant.label,
-				text: variant.label,
-				label: variant.label,
-			})),
-			onSelect: (label, event) => {
-				if (isNoteWideSelection(event)) {
-					const parsed = this.host.parse(view.state.doc.toString());
-					const result = this.host.store.applyLabelAcrossNote(
-						this.path,
-						parsed,
-						label,
-					);
-					new Notice(
-						`Applied to ${result.applied} block${result.applied === 1 ? '' : 's'}, skipped ${result.skipped}.`,
-					);
-				} else {
-					void this.selectVariant(view, label);
-				}
-			},
-		});
-	}
-
-	private async editVariant(
-		view: EditorView,
-		variant: VariantSection,
-	): Promise<void> {
-		const persistent = await this.host.ensurePersistentIdentity(this.path, this.block);
-		if (!persistent) return;
-		this.host.store.setEditingVariant(this.path, persistent, variant.label);
-		this.host.store.setSelectedLabel(this.path, persistent, variant.label);
-		view.dispatch({
-			effects: refreshEffect.of(),
-			selection: { anchor: variant.content.from },
-		});
-		view.focus();
-	}
-
-	private async selectVariant(
-		view: EditorView,
-		label: string,
-	): Promise<void> {
-		const persistent = await this.host.ensurePersistentIdentity(this.path, this.block);
-		if (!persistent) return;
-		this.host.store.setSelectedLabel(this.path, persistent, label);
-		view.dispatch({ effects: refreshEffect.of() });
-	}
 }
 
-async function renderVariantPreview(
+function renderLiveToolbar(
 	host: SectionVariantsHost,
 	path: string,
-	source: string,
-	variant: VariantSection,
-	target: HTMLElement,
-	component: Component,
+	block: VariantBlock,
+	mode: LiveWidgetMode,
+	parent: HTMLElement,
+	view: EditorView,
+): void {
+	const toolbar = parent.createDiv({ cls: 'section-variants-toolbar' });
+	toolbar.setAttribute('role', 'toolbar');
+	toolbar.setAttribute('aria-label', 'Section variants in live preview');
+	createBlockControls({
+		host,
+		path,
+		block,
+		parent: toolbar,
+		mode,
+		onSelectLabel: (label, event) => {
+			if (isNoteWideSelection(event)) {
+				const parsed = host.parse(view.state.doc.toString());
+				const result = host.store.applyLabelAcrossNote(path, parsed, label);
+				new Notice(
+					`Applied to ${result.applied} block${result.applied === 1 ? '' : 's'}, skipped ${result.skipped}.`,
+				);
+				return;
+			}
+			void selectLiveVariant(host, path, block, label, view);
+		},
+	});
+}
+
+async function selectLiveVariant(
+	host: SectionVariantsHost,
+	path: string,
+	block: VariantBlock,
+	label: string,
+	view: EditorView,
 ): Promise<void> {
-	let cursor = variant.content.from;
-	for (const child of [...variant.children].sort(
-		(left, right) => left.range.from - right.range.from,
-	)) {
-		if (child.range.from > cursor) {
-			await MarkdownRenderer.render(
-				host.app,
-				source.slice(cursor, child.range.from),
-				target,
-				path,
-				component,
-			);
-		}
-		const nested = target.createDiv({ cls: 'section-variants-nested' });
-		component.addChild(
-			new VariantBlockRenderer(host, nested, path, source, child),
-		);
-		cursor = child.range.to;
-	}
-	if (cursor < variant.content.to) {
-		await MarkdownRenderer.render(
-			host.app,
-			source.slice(cursor, variant.content.to),
-			target,
-			path,
-			component,
-		);
-	}
+	const persistent = await host.ensurePersistentIdentity(path, block);
+	if (!persistent) return;
+	host.store.setSelectedLabel(path, persistent, label);
+	view.dispatch({ effects: refreshEffect.of() });
+}
+
+function editableVariantsForMode(
+	host: SectionVariantsHost,
+	path: string,
+	block: VariantBlock,
+	mode: LiveWidgetMode,
+): VariantSection[] {
+	const state = host.store.resolve(path, block);
+	return liveEditableVariants(
+		block,
+		mode,
+		state.selectedLabel,
+		state.hiddenLabels,
+	);
+}
+
+function staticVariantSignature(
+	source: string,
+	block: VariantBlock,
+	editable: readonly VariantSection[],
+): string {
+	const editableLabels = new Set(
+		editable.map((variant) => variant.normalizedLabel),
+	);
+	return block.variants
+		.filter((variant) => !editableLabels.has(variant.normalizedLabel))
+		.map((variant) => source.slice(variant.content.from, variant.content.to))
+		.join('\u0000');
+}
+
+function createOwnerDocumentDiv(root: HTMLElement): HTMLDivElement {
+	const ownerWindow = root.ownerDocument.win as Window & {
+		createDiv(): HTMLDivElement;
+	};
+	return ownerWindow.createDiv();
 }

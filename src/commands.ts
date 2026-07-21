@@ -116,6 +116,42 @@ export function registerCommands(plugin: SectionVariantsPlugin): void {
 	});
 
 	plugin.addCommand({
+		id: 'add-stable-block-id',
+		name: 'Add stable block ID',
+		editorCheckCallback: (checking, editor, view) => {
+			const focused = focusedBlock(plugin, editor, view);
+			if (!focused) return false;
+			if (!checking) void plugin.addStableBlockId(focused.path, focused.block);
+			return true;
+		},
+	});
+
+	plugin.addCommand({
+		id: 'save-focused-column-visibility',
+		name: 'Save focused column visibility',
+		editorCheckCallback: (checking, editor, view) => {
+			const focused = focusedBlock(plugin, editor, view);
+			if (!focused) return false;
+			if (!checking) plugin.store.saveHidden(focused.path, focused.block);
+			return true;
+		},
+	});
+
+	plugin.addCommand({
+		id: 'restore-focused-columns',
+		name: 'Restore focused columns',
+		editorCheckCallback: (checking, editor, view) => {
+			const focused = focusedBlock(plugin, editor, view);
+			if (!focused) return false;
+			const hasHidden =
+				plugin.store.resolve(focused.path, focused.block).hiddenLabels.size > 0;
+			if (!hasHidden) return false;
+			if (!checking) plugin.store.restoreColumns(focused.path, focused.block);
+			return true;
+		},
+	});
+
+	plugin.addCommand({
 		id: 'reset-all-blocks-to-defaults',
 		name: 'Reset all blocks to defaults',
 		checkCallback: (checking) => {

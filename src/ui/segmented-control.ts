@@ -14,6 +14,8 @@ export interface SegmentOption<T extends string> {
 export interface SegmentedControlOptions<T extends string> {
 	options: SegmentOption<T>[];
 	value: T | undefined;
+	/** Multiple active values turn the segments into independent toggles. */
+	activeValues?: ReadonlySet<T>;
 	onSelect: (value: T, event: MouseEvent) => void;
 	/** Accessible name for the group. */
 	ariaLabel: string;
@@ -36,18 +38,21 @@ export function createSegmentedControl<T extends string>(
 		onSelect,
 		ariaLabel,
 		cls,
+		activeValues,
 	}: SegmentedControlOptions<T>,
 ): HTMLElement {
 	const group = parent.createDiv({
 		cls: `section-variants-segmented${cls ? ` ${cls}` : ''}`,
 	});
-	group.setAttribute('role', 'radiogroup');
+	group.setAttribute('role', activeValues ? 'group' : 'radiogroup');
 	group.setAttribute('aria-label', ariaLabel);
 
 	const buttons: HTMLButtonElement[] = [];
 	// When nothing matches (e.g. blocks disagree), the first segment carries the
 	// tab stop so the group stays reachable.
-	const selectedIndex = options.findIndex((option) => option.value === value);
+	const selectedIndex = options.findIndex((option) =>
+		activeValues ? activeValues.has(option.value) : option.value === value,
+	);
 	const tabStop = selectedIndex === -1 ? 0 : selectedIndex;
 
 	options.forEach((option, index) => {
@@ -55,9 +60,14 @@ export function createSegmentedControl<T extends string>(
 			cls: 'section-variants-segment',
 			type: 'button',
 		});
-		const isSelected = index === selectedIndex;
-		button.setAttribute('role', 'radio');
-		button.setAttribute('aria-checked', String(isSelected));
+		const isSelected = activeValues
+			? activeValues.has(option.value)
+			: index === selectedIndex;
+		if (activeValues) button.setAttribute('aria-pressed', String(isSelected));
+		else {
+			button.setAttribute('role', 'radio');
+			button.setAttribute('aria-checked', String(isSelected));
+		}
 		button.setAttribute('aria-label', option.label);
 		button.tabIndex = index === tabStop ? 0 : -1;
 		button.toggleClass('is-active', isSelected);

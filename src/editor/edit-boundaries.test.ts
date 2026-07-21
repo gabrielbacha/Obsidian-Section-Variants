@@ -147,6 +147,18 @@ describe('live preview edit boundaries', () => {
 				to: child.range.from + 1,
 			}),
 		).toBe(false);
+		expect(
+			allowed(parsed, spans, {
+				from: child.range.from - 1,
+				to: child.range.from,
+			}),
+		).toBe(false);
+		expect(
+			allowed(parsed, spans, {
+				from: child.range.to,
+				to: child.range.to + 1,
+			}),
+		).toBe(false);
 	});
 });
 

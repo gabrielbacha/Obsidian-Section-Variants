@@ -3,10 +3,17 @@ import { normalizeLabel, ViewMode } from '../core/types';
 import { unionLabels } from '../core/labels';
 import { SectionVariantsHost } from '../plugin-host';
 import { createSegmentedControl, VIEW_MODE_SEGMENTS } from './segmented-control';
+import { bottomObstruction } from './sticky-layout';
 import { createVariantMarker } from './variant-marker';
 
+interface StickyControlResource {
+	control: HTMLElement;
+	observer: ResizeObserver;
+	statusBar?: HTMLElement;
+}
+
 export class StickyControlManager {
-	private readonly controls = new Map<MarkdownView, HTMLElement>();
+	private readonly controls = new Map<MarkdownView, StickyControlResource>();
 
 	constructor(private readonly host: SectionVariantsHost) {}
 
@@ -29,16 +36,18 @@ export class StickyControlManager {
 				.map((leaf) => leaf.view)
 				.filter((view): view is MarkdownView => view instanceof MarkdownView),
 		);
-		for (const [view, control] of this.controls) {
+		for (const [view, resource] of this.controls) {
 			if (activeViews.has(view)) continue;
 			if (liveViews.has(view) && view.file) continue;
-			control.remove();
-			this.controls.delete(view);
+			this.removeControl(view, resource);
 		}
 	}
 
 	destroy(): void {
-		for (const control of this.controls.values()) control.remove();
+		for (const resource of this.controls.values()) {
+			resource.observer.disconnect();
+			resource.control.remove();
+		}
 		this.controls.clear();
 	}
 
@@ -47,16 +56,17 @@ export class StickyControlManager {
 		const blocks = parsed.blocks.filter((block) => block.valid);
 		const visible =
 			blocks.length >= 2 && this.host.store.isStickyVisible(path);
-		let control = this.controls.get(view);
+		let resource = this.controls.get(view);
 		if (!visible) {
-			control?.remove();
-			this.controls.delete(view);
+			if (resource) this.removeControl(view, resource);
 			return;
 		}
-		if (!control) {
-			control = view.containerEl.createDiv({ cls: 'section-variants-sticky-control' });
-			this.controls.set(view, control);
+		if (!resource) {
+			resource = this.createControl(view);
+			this.controls.set(view, resource);
 		}
+		this.observeLayout(view, resource);
+		const { control } = resource;
 		control.empty();
 		control.setAttribute('role', 'toolbar');
 		control.setAttribute('aria-label', 'Note-wide section variants');
@@ -79,28 +89,12 @@ export class StickyControlManager {
 		const differs = blocks.some(
 			(block) => this.host.store.resolve(path, block).differsFromAuthored,
 		);
-		createVariantMarker(control, {
-			ariaLabel: 'Open note variants menu',
-			tooltip: [
-				activeLabel ? `Current variant: ${activeLabel}` : 'Current variant: Mixed',
-				activeView ? `Current view: ${activeView}` : 'Current view: Mixed',
-				differs
-					? 'Some blocks differ from authored defaults'
-					: 'All blocks follow authored defaults',
-			].join('\n'),
-			differs: differs && this.host.store.settings.showIndicators,
-			mixed: currentLabels.size > 1 || views.size > 1,
-			onClick: (event) => this.openMenu(event, path, parsed, activeView),
-		});
-		createSegmentedControl(control, {
+		const reveal = control.createDiv({ cls: 'section-variants-reveal-controls' });
+		createSegmentedControl(reveal, {
 			cls: 'section-variants-labels',
 			ariaLabel: 'Apply variant across note',
 			value: activeLabel,
-			options: labels.map((label) => ({
-				value: label,
-				text: label,
-				label,
-			})),
+			options: labels.map((label) => ({ value: label, text: label, label })),
 			onSelect: (label) => {
 				const result = this.host.store.applyLabelAcrossNote(path, parsed, label);
 				new Notice(
@@ -108,6 +102,72 @@ export class StickyControlManager {
 				);
 			},
 		});
+		createSegmentedControl(reveal, {
+			cls: 'section-variants-view-modes',
+			ariaLabel: 'Apply view across note',
+			value: activeView,
+			options: VIEW_MODE_SEGMENTS,
+			onSelect: (viewMode) => {
+				this.host.store.applyViewAcrossNote(path, parsed, viewMode);
+			},
+		});
+		createVariantMarker(control, {
+			ariaLabel: 'Open note variants menu',
+			tooltip: `${activeLabel ?? 'Mixed'} · ${activeView ? titleCase(activeView) : 'Mixed'}${differs ? ' · differs from defaults' : ''}`,
+			differs: differs && this.host.store.settings.showIndicators,
+			mixed: currentLabels.size > 1 || views.size > 1,
+			onClick: (event) => this.openMenu(event, path, parsed, activeView),
+		});
+	}
+
+	private createControl(view: MarkdownView): StickyControlResource {
+		const control = view.containerEl.createDiv({ cls: 'section-variants-sticky-control' });
+		let resource: StickyControlResource;
+		const observer = new ResizeObserver(() => {
+			this.updateBottomOffset(view, resource);
+		});
+		resource = { control, observer };
+		observer.observe(view.containerEl);
+		return resource;
+	}
+
+	private observeLayout(
+		view: MarkdownView,
+		resource: StickyControlResource,
+	): void {
+		const statusBar = view.containerEl.ownerDocument.querySelector<HTMLElement>(
+			'.status-bar',
+		) ?? undefined;
+		if (resource.statusBar !== statusBar) {
+			resource.observer.disconnect();
+			resource.observer.observe(view.containerEl);
+			if (statusBar) resource.observer.observe(statusBar);
+			resource.statusBar = statusBar;
+		}
+		this.updateBottomOffset(view, resource);
+	}
+
+	private updateBottomOffset(
+		view: MarkdownView,
+		resource: StickyControlResource,
+	): void {
+		const obstruction = bottomObstruction(
+			view.containerEl.getBoundingClientRect(),
+			resource.statusBar?.getBoundingClientRect(),
+		);
+		resource.control.style.setProperty(
+			'--section-variants-bottom-obstruction',
+			`${obstruction}px`,
+		);
+	}
+
+	private removeControl(
+		view: MarkdownView,
+		resource: StickyControlResource,
+	): void {
+		resource.observer.disconnect();
+		resource.control.remove();
+		this.controls.delete(view);
 	}
 
 	private openMenu(
@@ -136,4 +196,8 @@ export class StickyControlManager {
 		);
 		menu.showAtMouseEvent(event);
 	}
+}
+
+function titleCase(value: string): string {
+	return value.charAt(0).toUpperCase() + value.slice(1);
 }

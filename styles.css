@@ -12,13 +12,12 @@
 	position: relative;
 	margin-block: var(--size-4-4);
 	padding: var(--size-4-3);
-	border: 1px solid var(--section-variants-rule, var(--background-modifier-border));
-	border-radius: var(--radius-s);
+	border: 0;
 	color: var(--text-normal);
 }
 
-.section-variants-root:hover,
-.section-variants-root:focus-within {
+.section-variants-root:hover > .section-variants-content,
+.section-variants-root:focus-within > .section-variants-content {
 	border-color: var(--background-modifier-border-hover);
 }
 
@@ -33,25 +32,46 @@
 	min-width: 0;
 }
 
+.section-variants-reveal-controls {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-1);
+	min-width: 0;
+	max-width: min(70vw, 720px);
+}
+
+.section-variants-control-divider {
+	flex: 0 0 auto;
+	width: 1px;
+	height: 14px;
+	background: var(--background-modifier-border);
+}
+
+.section-variants-restore-columns {
+	flex: 0 0 auto;
+	width: 22px;
+	height: 22px;
+	padding: 3px;
+}
+
 .section-variants-toolbar {
 	position: absolute;
 	z-index: 2;
-	top: 0;
+	top: var(--size-2-1);
 	right: var(--size-2-3);
 	width: fit-content;
 	max-width: 100%;
 	padding-inline: 2px;
 	border-radius: var(--radius-s);
 	background: var(--background-primary);
-	transform: translateY(-50%);
 }
 
 @media (hover: hover) and (pointer: fine) {
-	.section-variants-toolbar > .section-variants-labels,
-	.section-variants-sticky-control > .section-variants-labels {
+	.section-variants-toolbar > .section-variants-reveal-controls,
+	.section-variants-sticky-control > .section-variants-reveal-controls {
 		position: absolute;
 		top: 50%;
-		right: 100%;
+		right: calc(100% + var(--size-2-1));
 		width: max-content;
 		max-width: min(70vw, 720px);
 		transform: translateY(-50%);
@@ -59,9 +79,12 @@
 
 	.section-variants-root:not(:hover, :focus-within)
 		> .section-variants-toolbar
-		> .section-variants-labels,
+		> .section-variants-reveal-controls,
+	.section-variants-root:has(.section-variants-root:hover, .section-variants-root:focus-within)
+		> .section-variants-toolbar
+		> .section-variants-reveal-controls,
 	.section-variants-sticky-control:not(:hover, :focus-within)
-		> .section-variants-labels {
+		> .section-variants-reveal-controls {
 		opacity: 0;
 		transform: translate(4px, -50%);
 		pointer-events: none;
@@ -187,6 +210,9 @@
 
 .section-variants-content {
 	min-width: 0;
+	padding: var(--size-4-3);
+	border: 1px solid var(--section-variants-rule, var(--background-modifier-border));
+	border-radius: var(--radius-s);
 }
 
 .section-variants-view-columns {
@@ -293,38 +319,17 @@
 	margin-block: var(--size-2-2);
 }
 
-.section-variants-live-toolbar,
-.section-variants-live-editing-columns {
-	margin-block-end: 0;
-	border-block-end: 0;
-	border-end-start-radius: 0;
-	border-end-end-radius: 0;
-}
-
-.cm-line.section-variants-live-border-line {
-	padding-inline: calc(var(--content-padding, 0px) + var(--size-4-3));
-	border-inline: 1px solid var(--background-modifier-border);
-}
-
-.cm-line.section-variants-live-border-line:hover,
-.cm-line.cm-activeLine.section-variants-live-border-line {
-	border-color: var(--background-modifier-border-hover);
-}
-
-.cm-line.section-variants-live-border-line.is-end {
-	padding-block-end: var(--size-4-3);
-	border-block-end: 1px solid var(--background-modifier-border);
-	border-end-start-radius: var(--radius-s);
-	border-end-end-radius: var(--radius-s);
-}
-
 /* ---------------------------------------------------------- sticky control */
 
 .section-variants-sticky-control {
 	position: absolute;
 	z-index: var(--layer-popover);
-	top: calc(var(--size-4-2) + env(safe-area-inset-top, 0px));
+	top: auto;
 	right: calc(var(--size-4-2) + env(safe-area-inset-right, 0px));
+	bottom: calc(
+		var(--section-variants-bottom-obstruction, 0px) + var(--size-4-2) +
+			env(safe-area-inset-bottom, 0px)
+	);
 	max-width: calc(100% - var(--size-4-8));
 	padding: 2px;
 	border: 0;
@@ -364,14 +369,16 @@
 			transform var(--anim-duration-fast, 140ms) ease;
 	}
 
+	.section-variants-reveal-controls {
+		transition:
+			opacity var(--anim-duration-fast, 140ms) ease,
+			transform var(--anim-duration-fast, 140ms) ease;
+	}
+
 	.section-variants-segment {
 		transition:
 			background-color var(--anim-duration-fast, 140ms) ease,
 			color var(--anim-duration-fast, 140ms) ease;
-	}
-
-	.section-variants-view-columns {
-		transition: grid-template-columns var(--anim-duration-moderate, 220ms) ease;
 	}
 
 	/* Crossfade the variant that comes into view on switch. */
@@ -391,17 +398,10 @@
 
 /* ----------------------------------------------------------------- mobile */
 
-body.is-mobile .section-variants-toolbar {
-	position: static;
-	width: fit-content;
-	margin-block-end: var(--size-2-3);
-	overflow-x: auto;
-	transform: none;
-}
-
 /* Touch targets. `isDesktopOnly` is false, so these must clear 44px. */
 body.is-mobile .section-variants-segment,
-body.is-mobile .section-variants-marker {
+body.is-mobile .section-variants-marker,
+body.is-mobile .section-variants-restore-columns {
 	min-height: 44px;
 }
 
@@ -410,9 +410,67 @@ body.is-mobile .section-variants-marker {
 	height: 44px;
 }
 
+body.is-mobile .section-variants-restore-columns {
+	min-width: 44px;
+}
+
+body.is-mobile .section-variants-reveal-controls {
+	max-width: min(75vw, 720px);
+	overflow-x: auto;
+}
+
+@media (hover: none), (pointer: coarse) {
+	.section-variants-segment,
+	.section-variants-marker,
+	.section-variants-restore-columns,
+	.section-variants-column-header button {
+		min-width: 44px;
+		min-height: 44px;
+	}
+
+	.section-variants-reveal-controls {
+		max-width: min(75vw, 720px);
+		overflow-x: auto;
+	}
+}
+
 body.is-mobile .section-variants-column-header button {
 	min-width: 44px;
 	min-height: 44px;
+}
+
+/* The nested source editor inherits the note typography and owns no chrome. */
+.section-variants-inline-editor .cm-editor,
+.section-variants-inline-editor .cm-scroller {
+	min-height: 1.5em;
+	background: transparent;
+	font-family: var(--font-text);
+}
+
+.section-variants-inline-editor .cm-scroller {
+	overflow: hidden;
+}
+
+.section-variants-inline-editor .cm-content {
+	padding: 0;
+	caret-color: var(--text-normal);
+}
+
+.section-variants-inline-editor .cm-line {
+	padding: 0;
+}
+
+.section-variants-inline-editor .cm-gutters {
+	display: none;
+}
+
+.section-variants-panel.is-editing:focus-within {
+	border-radius: var(--radius-s);
+	box-shadow: inset 0 0 0 1px var(--background-modifier-border-focus);
+}
+
+.section-variants-inline-editor .cm-editor.cm-focused {
+	outline: none;
 }
 
 body.is-mobile

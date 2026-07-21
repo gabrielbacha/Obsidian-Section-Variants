@@ -210,6 +210,27 @@ describe('state identity migration', () => {
 		});
 		expect(note.blocks[block.identityKey]).toBeUndefined();
 	});
+
+	it('clears inline editing when its column or view becomes unavailable', async () => {
+		const store = await createStore();
+		const block = parseNote(blockSource()).blocks[0]!;
+		store.setView('Note.md', block, 'columns');
+		store.setEditingVariant('Note.md', block, 'B');
+
+		store.toggleHidden('Note.md', block, 'B');
+		expect(store.getEditingVariant('Note.md', block)).toBeUndefined();
+
+		store.restoreColumns('Note.md', block);
+		expect(store.resolve('Note.md', block).hiddenLabels.size).toBe(0);
+		store.setEditingVariant('Note.md', block, 'A');
+		store.setView('Note.md', block, 'toggle');
+		expect(store.getEditingVariant('Note.md', block)).toBeUndefined();
+
+		store.setEditingVariant('Note.md', block, 'A');
+		store.getNote('Note.md', true)!.globalView = 'toggle';
+		store.followGlobalState('Note.md', block);
+		expect(store.getEditingVariant('Note.md', block)).toBeUndefined();
+	});
 });
 
 async function createStore(): Promise<StateStore> {

@@ -102,6 +102,9 @@ export class StateStore {
 			delete state.viewMode;
 			pruneBlockState(note, block.identityKey);
 		}
+		if (resolveBlockState(block, note, this.settings).view !== 'columns') {
+			this.editingVariants.delete(sessionKey(path, block.identityKey));
+		}
 		this.changed({ scope: 'block', path, blockKey: block.identityKey });
 		return { label, view };
 	}
@@ -111,6 +114,9 @@ export class StateStore {
 		const state = ensureBlockState(note, block.identityKey);
 		state.view = view;
 		delete state.viewMode;
+		if (view !== 'columns') {
+			this.editingVariants.delete(sessionKey(path, block.identityKey));
+		}
 		this.changed({ scope: 'block', path, blockKey: block.identityKey });
 	}
 
@@ -128,6 +134,11 @@ export class StateStore {
 	applyViewAcrossNote(path: string, parsed: ParsedNote, view: ViewMode): void {
 		const note = this.getNote(path, true) as PersistedNoteState;
 		applyGlobalView(note, parsed, view);
+		if (view !== 'columns') {
+			for (const block of parsed.blocks.filter((candidate) => candidate.valid)) {
+				this.editingVariants.delete(sessionKey(path, block.identityKey));
+			}
+		}
 		this.changed({ scope: 'note', path });
 	}
 
@@ -139,8 +150,19 @@ export class StateStore {
 			new Set((persisted?.savedHiddenLabels ?? []).map(normalizeLabel));
 		const normalized = normalizeLabel(label);
 		if (hidden.has(normalized)) hidden.delete(normalized);
-		else hidden.add(normalized);
+		else {
+			hidden.add(normalized);
+			const editing = this.editingVariants.get(key);
+			if (editing && normalizeLabel(editing) === normalized) {
+				this.editingVariants.delete(key);
+			}
+		}
 		this.sessionHidden.set(key, hidden);
+		this.emit({ scope: 'block', path, blockKey: block.identityKey });
+	}
+
+	restoreColumns(path: string, block: VariantBlock): void {
+		this.sessionHidden.set(sessionKey(path, block.identityKey), new Set());
 		this.emit({ scope: 'block', path, blockKey: block.identityKey });
 	}
 

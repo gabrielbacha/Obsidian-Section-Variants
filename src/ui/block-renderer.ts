@@ -13,10 +13,8 @@ import {
 	VariantSection,
 } from '../core/types';
 import { SectionVariantsHost } from '../plugin-host';
-import { blockMarkerTooltip, openBlockMenu } from './block-menu';
-import { createSegmentedControl } from './segmented-control';
+import { createBlockControls } from './block-controls';
 import { hasRoomForColumns, resolveLengthPx } from './css-length';
-import { createVariantMarker } from './variant-marker';
 
 export class VariantBlockRenderer extends MarkdownRenderChild {
 	private renderComponent?: Component;
@@ -76,9 +74,8 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 		const component = new Component();
 		this.renderComponent = this.addChild(component);
 		const state = this.host.store.resolve(this.sourcePath, this.block);
-		this.renderToolbar(state.selectedLabel, state.differsFromAuthored);
-
 		const mode = state.view === 'auto' ? (this.autoColumns ? 'columns' : 'toggle') : state.view;
+		this.renderToolbar(mode);
 		this.containerEl.dataset.currentView = mode;
 		const content = this.containerEl.createDiv({
 			cls: `section-variants-content section-variants-view-${mode}`,
@@ -120,39 +117,23 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 				type: 'button',
 				text: 'Restore columns',
 			});
-			restore.addEventListener('click', (event) => this.openMenu(event));
+			restore.addEventListener('click', () => {
+				this.host.store.restoreColumns(this.sourcePath, this.block);
+			});
 		}
 	}
 
-	private renderToolbar(selectedLabel: string, differsFromAuthored: boolean): void {
+	private renderToolbar(mode: 'toggle' | 'columns'): void {
 		const toolbar = this.containerEl.createDiv({ cls: 'section-variants-toolbar' });
 		toolbar.setAttribute('role', 'toolbar');
 		toolbar.setAttribute('aria-label', 'Section variants');
-		createVariantMarker(toolbar, {
-			ariaLabel: 'Open variants menu',
-			tooltip: blockMarkerTooltip(
-				this.host,
-				this.sourcePath,
-				this.block,
-			),
-			differs:
-				differsFromAuthored && this.host.store.settings.showIndicators,
-			onClick: (event) => this.openMenu(event),
-		});
-		const active = this.block.variants.find(
-			(variant) => variant.normalizedLabel === normalizeLabel(selectedLabel),
-		);
-		createSegmentedControl(toolbar, {
-			cls: 'section-variants-labels',
-			ariaLabel: 'Variant',
-			value: active?.label,
-			options: this.block.variants.map((variant) => ({
-				value: variant.label,
-				text: variant.label,
-				label: variant.label,
-				tooltip: `${variant.label}\nShift-select to apply across the note`,
-			})),
-			onSelect: (label, event) => {
+		createBlockControls({
+			host: this.host,
+			path: this.sourcePath,
+			block: this.block,
+			parent: toolbar,
+			mode,
+			onSelectLabel: (label, event) => {
 				if (event.shiftKey) {
 					const parsed = this.host.parse(this.source);
 					const result = this.host.store.applyLabelAcrossNote(
@@ -168,15 +149,6 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 				}
 			},
 		});
-	}
-
-	private openMenu(event: MouseEvent): void {
-		openBlockMenu(
-			this.host,
-			this.sourcePath,
-			this.block,
-			event,
-		);
 	}
 
 	private renderColumnHeader(panel: HTMLElement, variant: VariantSection): void {
