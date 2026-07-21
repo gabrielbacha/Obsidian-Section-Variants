@@ -103,7 +103,7 @@ export function createSegmentedControl<T extends string>(
 	return group;
 }
 
-export const VIEW_MODE_SEGMENTS: SegmentOption<'toggle' | 'columns' | 'auto'>[] = [
+export const VIEW_MODE_SEGMENTS: SegmentOption<'toggle' | 'columns'>[] = [
 	{ value: 'toggle', icon: 'rows-2', label: 'Toggle', tooltip: 'Show one variant' },
 	{
 		value: 'columns',
@@ -111,5 +111,4 @@ export const VIEW_MODE_SEGMENTS: SegmentOption<'toggle' | 'columns' | 'auto'>[] 
 		label: 'Columns',
 		tooltip: 'Compare variants side by side',
 	},
-	{ value: 'auto', icon: 'wand-2', label: 'Auto', tooltip: 'Choose based on width' },
 ];

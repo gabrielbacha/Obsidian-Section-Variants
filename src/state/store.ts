@@ -518,9 +518,7 @@ function createStoredData(): StoredData {
 function migrateSettings(value: unknown): SectionVariantsSettings {
 	if (!isRecord(value)) return { ...DEFAULT_SETTINGS };
 	return {
-		defaultView: isViewMode(value.defaultView)
-			? value.defaultView
-			: DEFAULT_SETTINGS.defaultView,
+		defaultView: migrateViewMode(value.defaultView) ?? DEFAULT_SETTINGS.defaultView,
 		defaultMinWidth:
 			typeof value.defaultMinWidth === 'string'
 				? value.defaultMinWidth
@@ -559,7 +557,8 @@ function migrateNotes(value: unknown): Record<string, PersistedNoteState> {
 		if (typeof rawNote.globalLabel === 'string') {
 			note.globalLabel = rawNote.globalLabel;
 		}
-		if (isViewMode(rawNote.globalView)) note.globalView = rawNote.globalView;
+		const globalView = migrateViewMode(rawNote.globalView);
+		if (globalView) note.globalView = globalView;
 		if (typeof rawNote.stickyVisible === 'boolean') {
 			note.stickyVisible = rawNote.stickyVisible;
 		}
@@ -570,7 +569,8 @@ function migrateNotes(value: unknown): Record<string, PersistedNoteState> {
 				if (typeof rawBlock.selectedLabel === 'string') {
 					block.selectedLabel = rawBlock.selectedLabel;
 				}
-				if (isViewMode(rawBlock.view)) block.view = rawBlock.view;
+				const view = migrateViewMode(rawBlock.view);
+				if (view) block.view = view;
 				if (rawBlock.labelMode === 'authored') block.labelMode = 'authored';
 				if (rawBlock.viewMode === 'authored') block.viewMode = 'authored';
 				if (Array.isArray(rawBlock.savedHiddenLabels)) {
@@ -592,7 +592,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isViewMode(value: unknown): value is ViewMode {
-	return value === 'toggle' || value === 'columns' || value === 'auto';
+	return value === 'toggle' || value === 'columns';
+}
+
+function migrateViewMode(value: unknown): ViewMode | undefined {
+	return value === 'auto' ? 'columns' : isViewMode(value) ? value : undefined;
 }
 
 function isResponsiveMode(value: unknown): value is ResponsiveMode {

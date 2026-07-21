@@ -100,7 +100,7 @@ describe('state model', () => {
 			view: 'toggle',
 		});
 		note.globalLabel = 'A';
-		note.globalView = 'auto';
+		note.globalView = 'toggle';
 		expect(resolveBlockState(block, note, DEFAULT_SETTINGS)).toMatchObject({
 			selectedLabel: 'A',
 			view: 'toggle',

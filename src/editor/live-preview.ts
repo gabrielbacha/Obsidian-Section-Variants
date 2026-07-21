@@ -27,7 +27,6 @@ import { VariantBlock, VariantSection } from '../core/types';
 import { SectionVariantsHost } from '../plugin-host';
 import { createBlockControls } from '../ui/block-controls';
 import { syncColumnSeparators } from '../ui/column-layout';
-import { hasRoomForColumns, resolveLengthPx } from '../ui/css-length';
 import {
 	createVariantHeader,
 	VariantHeaderHandle,
@@ -54,17 +53,6 @@ const refreshField = StateField.define<number>({
 			: value;
 	},
 });
-const editorWidthEffect = StateEffect.define<number>();
-const editorWidthField = StateField.define<number>({
-	create: () => 0,
-	update(value, transaction) {
-		for (const effect of transaction.effects) {
-			if (effect.is(editorWidthEffect)) return effect.value;
-		}
-		return value;
-	},
-});
-
 const editorViews = new Set<EditorView>();
 
 /**
@@ -94,13 +82,12 @@ export function createLivePreviewExtension(
 		},
 		update(decorations, transaction) {
 			/*
-			 * Decorations depend on the document, the editor width, and store
-			 * state — never on the selection. Rebuilding on every cursor move
-			 * re-parsed the whole document for nothing, so only these three
-			 * trigger a rebuild.
+			 * Decorations depend on the document and store state, never on the
+			 * selection. Rebuilding on every cursor move would re-parse the whole
+			 * document for nothing, so only those inputs trigger a rebuild.
 			 */
 			const relevantEffect = transaction.effects.some(
-				(effect) => effect.is(refreshEffect) || effect.is(editorWidthEffect),
+				(effect) => effect.is(refreshEffect),
 			);
 			const livePreviewChanged =
 				transaction.startState.field(editorLivePreviewField, false) !==
@@ -119,48 +106,17 @@ export function createLivePreviewExtension(
 	});
 
 	class SectionVariantsViewPlugin implements PluginValue {
-		private widthDispatchTimer: number | undefined;
-		private readonly resizeObserver: ResizeObserver;
-
 		constructor(private readonly view: EditorView) {
 			editorViews.add(view);
-			this.resizeObserver = new ResizeObserver((entries) => {
-				const entry = entries.at(-1);
-				if (entry) this.deferWidthUpdate(entry.contentRect.width);
-			});
-			this.resizeObserver.observe(view.dom);
-			this.deferWidthUpdate(view.dom.clientWidth);
 		}
 
 		destroy(): void {
-			this.resizeObserver.disconnect();
-			if (this.widthDispatchTimer !== undefined) {
-				window.clearTimeout(this.widthDispatchTimer);
-			}
 			editorViews.delete(this.view);
 		}
-
-		private deferWidthUpdate(width: number): void {
-			if (this.widthDispatchTimer !== undefined) {
-				window.clearTimeout(this.widthDispatchTimer);
-			}
-			this.widthDispatchTimer = window.setTimeout(() => {
-				this.widthDispatchTimer = undefined;
-				if (
-					!editorViews.has(this.view) ||
-					this.view.state.field(editorWidthField) === width
-				) {
-					return;
-				}
-				this.view.dispatch({ effects: editorWidthEffect.of(width) });
-			}, 0);
-		}
-
 	}
 
 	return [
 		refreshField,
-		editorWidthField,
 		EditorState.changeFilter.of((transaction) => {
 			if (!transaction.docChanged) return true;
 			if (isStructuralTransaction()) return true;
@@ -179,7 +135,6 @@ export function createLivePreviewExtension(
 			const parsed = host.parse(transaction.startState.doc.toString());
 			const spans = collectEditableSpans(
 				host,
-				transaction.startState.field(editorWidthField),
 				path,
 				parsed.source,
 				parsed.roots,
@@ -215,7 +170,6 @@ export function createLivePreviewExtension(
 
 function collectEditableSpans(
 	host: SectionVariantsHost,
-	editorWidth: number,
 	path: string,
 	source: string,
 	blocks: readonly VariantBlock[],
@@ -224,19 +178,7 @@ function collectEditableSpans(
 	for (const block of blocks) {
 		if (!block.valid || !block.closing) continue;
 		const state = host.store.resolve(path, block);
-		const autoColumns =
-			state.view === 'auto' &&
-			hasRoomForColumns(
-				editorWidth,
-				resolveLengthPx(state.minWidth, activeDocument.body),
-				block.variants.length,
-			);
-		const mode =
-			state.view === 'auto'
-				? autoColumns
-					? 'columns'
-					: 'toggle'
-				: state.view;
+		const mode = state.view;
 		const editable = liveEditableVariants(
 			block,
 			mode,
@@ -249,7 +191,6 @@ function collectEditableSpans(
 			spans.push(
 				...collectEditableSpans(
 					host,
-					editorWidth,
 					path,
 					source,
 					variant.children,
@@ -270,7 +211,6 @@ function buildDecorations(
 	const path = info?.file?.path;
 	if (!path) return { deco: Decoration.none, atomic: Decoration.none };
 	const source = state.doc.toString();
-	const editorWidth = state.field(editorWidthField);
 	const parsed = host.parse(source);
 	const ranges: Range<Decoration>[] = [];
 	const atomicRanges: Range<Decoration>[] = [];
@@ -279,7 +219,6 @@ function buildDecorations(
 		decorateBlock(
 			host,
 			state.doc,
-			editorWidth,
 			path,
 			source,
 			block,
@@ -296,7 +235,6 @@ function buildDecorations(
 function decorateBlock(
 	host: SectionVariantsHost,
 	doc: EditorState['doc'],
-	editorWidth: number,
 	path: string,
 	source: string,
 	block: VariantBlock,
@@ -305,22 +243,8 @@ function decorateBlock(
 ): void {
 	if (!block.closing) return;
 	const state = host.store.resolve(path, block);
-	/*
-	 * Resolved against the document body: there is no per-block element at
-	 * decoration time. Exact for px and rem; em and ch resolve against the body
-	 * font rather than the block's own inherited font, which is close enough for
-	 * a stack-or-not decision.
-	 */
-	const autoColumns =
-		state.view === 'auto' &&
-		hasRoomForColumns(
-			editorWidth,
-			resolveLengthPx(state.minWidth, activeDocument.body),
-			block.variants.length,
-		);
-	const mode = state.view === 'auto' ? (autoColumns ? 'columns' : 'toggle') : state.view;
 	const span = blockSpan(doc, block.opening.from, block.closing.from);
-	const widgetMode: LiveWidgetMode = mode === 'toggle' ? 'toggle' : 'columns';
+	const widgetMode: LiveWidgetMode = state.view;
 	const decoration = Decoration.replace({
 		block: true,
 		widget: new LiveBlockWidget(host, path, source, block, widgetMode),
@@ -403,6 +327,7 @@ class LiveBlockWidget extends WidgetType {
 			'section-variants-live-widget',
 			`section-variants-live-${this.mode}`,
 		);
+		root.toggleClass('has-block-name', Boolean(this.block.attributes.name));
 		root.dataset.blockKey = this.block.identityKey;
 		renderLiveToolbar(this.host, this.path, this.block, this.mode, root, view);
 		const component = new Component();
@@ -418,7 +343,7 @@ class LiveBlockWidget extends WidgetType {
 		const contentMode = this.mode === 'toggle' ? 'toggle' : 'columns';
 		root.dataset.currentView = contentMode;
 		const content = root.createDiv({
-			cls: `section-variants-content section-variants-view-${contentMode}`,
+			cls: `section-variants-content section-variants-view-${contentMode}${this.block.attributes.name ? ' has-block-name' : ''}`,
 		});
 		if (this.block.attributes.name) {
 			content.createDiv({

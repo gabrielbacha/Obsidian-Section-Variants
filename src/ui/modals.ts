@@ -73,7 +73,7 @@ export class InsertVariantsModal extends Modal {
 			.setName('Default view')
 			.addDropdown((dropdown) =>
 				dropdown
-					.addOptions({ toggle: 'Toggle', columns: 'Columns', auto: 'Auto' })
+					.addOptions({ toggle: 'Toggle', columns: 'Columns' })
 					.setValue(this.view)
 					.onChange((value) => {
 						this.view = value as ViewMode;
@@ -212,7 +212,7 @@ export class BlockConfigurationModal extends Modal {
 			.setName('Authored view')
 			.addDropdown((dropdown) =>
 				dropdown
-					.addOptions({ toggle: 'Toggle', columns: 'Columns', auto: 'Auto' })
+					.addOptions({ toggle: 'Toggle', columns: 'Columns' })
 					.setValue(this.view)
 					.onChange((value) => {
 						this.view = value as ViewMode;

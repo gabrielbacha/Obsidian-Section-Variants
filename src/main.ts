@@ -18,6 +18,7 @@ import {
 	updateBlockAttributes,
 } from './core/mutations';
 import { collectLabelCatalog } from './core/labels';
+import { resolveCurrentBlock } from './core/block-resolution';
 import { parseNote } from './core/parser';
 import { serializeVariantsBlock } from './core/serializer';
 import { ParsedNote, VariantBlock } from './core/types';
@@ -195,24 +196,46 @@ export default class SectionVariantsPlugin
 	}
 
 	openAddVariant(path: string, block: VariantBlock, origin?: HTMLElement): void {
-		const initialEditor = this.resolveEditor(path, origin);
-		const suggestions = collectLabelCatalog(
-			this.parse(initialEditor?.getValue() ?? '').blocks,
-		);
-		new AddVariantModal(this.app, block, suggestions, async (label) => {
-			const result = await addVariant(
-				this.app,
-				path,
-				block,
-				label,
-				(source) => this.parseFresh(source),
-				this.resolveEditor(path, origin),
-			);
-			this.store.rekeyBlockState(path, result.before, result.after);
-			this.refreshAfterSourceMutation(path, result.source);
-			await this.store.flush();
-			new Notice(`Added ${result.label}.`);
-		}).open();
+		void this.openCurrentAddVariantModal(path, block, origin);
+	}
+
+	private async openCurrentAddVariantModal(
+		path: string,
+		block: VariantBlock,
+		origin?: HTMLElement,
+	): Promise<void> {
+		try {
+			const initialEditor = this.resolveEditor(path, origin);
+			const file = this.app.vault.getAbstractFileByPath(path);
+			const source =
+				initialEditor?.getValue() ??
+				(file instanceof TFile
+					? await this.app.vault.cachedRead(file)
+					: undefined);
+			if (source === undefined) throw new Error(`Note not found: ${path}`);
+			const parsed = this.parseFresh(source);
+			const current = resolveCurrentBlock(block, parsed.blocks);
+			if (!current?.valid) {
+				throw new Error('The variants block changed. Try the action again.');
+			}
+			const suggestions = collectLabelCatalog(parsed.blocks);
+			new AddVariantModal(this.app, current, suggestions, async (label) => {
+				const result = await addVariant(
+					this.app,
+					path,
+					current,
+					label,
+					(source) => this.parseFresh(source),
+					this.resolveEditor(path, origin),
+				);
+				this.store.rekeyBlockState(path, result.before, result.after);
+				this.refreshAfterSourceMutation(path, result.source);
+				await this.store.flush();
+				new Notice(`Added ${result.label}.`);
+			}).open();
+		} catch (error) {
+			new Notice(errorMessage(error));
+		}
 	}
 
 	openDeleteVariant(

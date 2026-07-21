@@ -23,7 +23,7 @@ export class SectionVariantsSettingTab extends PluginSettingTab {
 				control: {
 					type: 'dropdown',
 					key: 'defaultView',
-					options: { toggle: 'Toggle', columns: 'Columns', auto: 'Auto' },
+					options: { toggle: 'Toggle', columns: 'Columns' },
 				},
 			},
 			{

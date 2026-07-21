@@ -1,4 +1,4 @@
-export type ViewMode = 'toggle' | 'columns' | 'auto';
+export type ViewMode = 'toggle' | 'columns';
 export type ResponsiveMode = 'responsive' | 'stack' | 'scroll';
 
 export interface SourceRange {

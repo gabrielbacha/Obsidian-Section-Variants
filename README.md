@@ -24,7 +24,7 @@ Safe single-token labels use shorthand. Labels containing spaces or punctuation 
 
 - `#id`
 - `name="Box title"`
-- `view="toggle|columns|auto"`
+- `view="toggle|columns"`
 - `default="Label"`
 - `widths="40% 60%"`
 - `min-width="320px"`
@@ -34,7 +34,7 @@ The canonical container is `variants`. Additional aliases can be enabled in **Se
 
 ## Using variants
 
-- Hover or focus a bordered block to reveal its label and Toggle/Columns/Auto controls.
+- Hover or focus a bordered block to reveal its labels, an Add variant shortcut, and Toggle/Columns controls.
 - Shift-select a label to apply it to every matching block in the note.
 - Open the small layers marker for **Add variant**, **Rename variant**, and **Delete variant**, followed by box and state settings. Rename/Delete submenus open while hovering or focusing and stay attached to their parent item. Deletion always requires confirmation; a box may temporarily contain one variant, but the final variant cannot be deleted.
 - Hide individual columns temporarily and explicitly save visibility when wanted.
@@ -56,6 +56,8 @@ Three insertion paths open the same configuration dialog:
 Typing a variant opener inside an existing block also suggests labels already used in the note.
 
 Variant fields in both **Insert variants block** and **Add variant** autocomplete labels from valid blocks in the current note. Suggestions preserve authored casing, rank frequent labels first, and exclude labels already used in the box being edited.
+
+Legacy notes containing `view="auto"` remain valid and use responsive Columns. Auto is no longer offered for new blocks because Columns already wraps according to the available width.
 
 ## State and safety
 

@@ -16,14 +16,12 @@ import { SectionVariantsHost } from '../plugin-host';
 import { findReboundBlock } from '../reading/rebind';
 import { createBlockControls } from './block-controls';
 import { syncColumnSeparators } from './column-layout';
-import { hasRoomForColumns, resolveLengthPx } from './css-length';
 import { createVariantHeader } from './variant-header';
 
 export class VariantBlockRenderer extends MarkdownRenderChild {
 	private renderComponent?: Component;
 	private unsubscribe?: () => void;
 	private resizeObserver?: ResizeObserver;
-	private autoColumns = false;
 	private renderVersion = 0;
 	private columnsContent?: HTMLElement;
 
@@ -49,16 +47,9 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 			}
 		});
 		this.resizeObserver = new ResizeObserver(() => {
-			const next = this.hasRoomForColumns();
-			if (next === this.autoColumns) {
-				if (this.columnsContent) syncColumnSeparators(this.columnsContent);
-				return;
-			}
-			this.autoColumns = next;
-			void this.render();
+			if (this.columnsContent) syncColumnSeparators(this.columnsContent);
 		});
 		this.resizeObserver.observe(this.containerEl);
-		this.autoColumns = this.hasRoomForColumns();
 		void this.render();
 	}
 
@@ -83,6 +74,10 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 		this.clearRenderComponent();
 		this.containerEl.empty();
 		this.containerEl.addClass('section-variants-root');
+		this.containerEl.toggleClass(
+			'has-block-name',
+			Boolean(this.block.attributes.name),
+		);
 		this.containerEl.dataset.blockKey = this.block.identityKey;
 		this.containerEl.dataset.authoredView = effectiveAuthoredView(
 			this.block,
@@ -92,11 +87,11 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 		const component = new Component();
 		this.renderComponent = this.addChild(component);
 		const state = this.host.store.resolve(this.sourcePath, this.block);
-		const mode = state.view === 'auto' ? (this.autoColumns ? 'columns' : 'toggle') : state.view;
+		const mode = state.view;
 		this.renderToolbar(mode);
 		this.containerEl.dataset.currentView = mode;
 		const content = this.containerEl.createDiv({
-			cls: `section-variants-content section-variants-view-${mode}`,
+			cls: `section-variants-content section-variants-view-${mode}${this.block.attributes.name ? ' has-block-name' : ''}`,
 		});
 		if (this.block.attributes.name) {
 			content.createDiv({
@@ -257,19 +252,6 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 		}
 		content.toggleClass('section-variants-columns-stack', responsive === 'stack');
 		content.toggleClass('section-variants-columns-scroll', responsive === 'scroll');
-	}
-
-	private hasRoomForColumns(): boolean {
-		const minWidth = resolveLengthPx(
-			this.block.attributes.minWidth ??
-				this.host.store.settings.defaultMinWidth,
-			this.containerEl,
-		);
-		return hasRoomForColumns(
-			this.containerEl.clientWidth,
-			minWidth,
-			this.block.variants.length,
-		);
 	}
 
 	private clearRenderComponent(): void {

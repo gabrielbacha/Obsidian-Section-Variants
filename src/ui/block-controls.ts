@@ -65,6 +65,14 @@ export function createBlockControls({
 			else onSelectLabel(label, event);
 		},
 	});
+	const add = reveal.createEl('button', {
+		type: 'button',
+		cls: 'clickable-icon section-variants-add-variant',
+		attr: { 'aria-label': 'Add variant' },
+	});
+	setIcon(add, 'plus');
+	setTooltip(add, 'Add variant');
+	add.addEventListener('click', () => host.openAddVariant(path, block, add));
 	reveal.createSpan({ cls: 'section-variants-control-divider' });
 	createSegmentedControl<ViewMode>(reveal, {
 		cls: 'section-variants-views',

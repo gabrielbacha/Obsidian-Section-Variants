@@ -21,7 +21,7 @@ export interface OpeningDescription {
 	diagnostics: Omit<Diagnostic, 'line' | 'from' | 'to'>[];
 }
 
-const VIEW_MODES = new Set<ViewMode>(['toggle', 'columns', 'auto']);
+const VIEW_MODES = new Set<ViewMode>(['toggle', 'columns']);
 const RESPONSIVE_MODES = new Set<ResponsiveMode>([
 	'responsive',
 	'stack',
@@ -107,8 +107,13 @@ function describeContainer(bag: AttributeBag): OpeningDescription {
 
 	const view = bag.values.view;
 	if (view) {
-		if (VIEW_MODES.has(view as ViewMode)) attributes.view = view as ViewMode;
-		else diagnostics.push(invalidValue('view', view));
+		if (view === 'auto') {
+			// Auto was retired because responsive Columns already adapts to the
+			// available width. Keep old notes valid without rewriting their source.
+			attributes.view = 'columns';
+		} else if (VIEW_MODES.has(view as ViewMode)) {
+			attributes.view = view as ViewMode;
+		} else diagnostics.push(invalidValue('view', view));
 	}
 	const responsive = bag.values.responsive;
 	if (responsive) {

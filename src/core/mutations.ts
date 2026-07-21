@@ -1,5 +1,6 @@
 import { App, Editor, TFile } from 'obsidian';
 import { SAFE_SHORTHAND_LABEL } from './attributes';
+import { resolveCurrentBlock } from './block-resolution';
 import { randomBytes } from './random';
 import { escapeAttribute, serializeContainerOpening } from './serializer';
 import { runStructuralTransaction } from './structural-transaction';
@@ -183,7 +184,7 @@ export async function renameVariant(
 	let result: Omit<RenameMutationResult, 'source'> | undefined;
 	const source = await processSource(app, path, editor, (source) => {
 		const parsed = parse(source);
-		const currentTarget = findCurrentBlock(parsed, target);
+		const currentTarget = resolveCurrentBlock(target, parsed.blocks);
 		if (!currentTarget) throw new Error('The variants block changed. Reopen rename and try again.');
 		if (!currentTarget.valid) throw new Error('Fix this variants block before renaming its labels.');
 		const normalizedOld = normalizeLabel(oldLabel);
@@ -265,7 +266,7 @@ async function processTarget(
 	let mapping: BlockIdentityMapping | undefined;
 	const source = await processSource(app, path, editor, (source) => {
 		const parsed = parse(source);
-		const current = findCurrentBlock(parsed, target);
+		const current = resolveCurrentBlock(target, parsed.blocks);
 		if (!current) throw new Error('The variants block changed. Try the action again.');
 		const index = parsed.blocks.indexOf(current);
 		const changed = change(source, current);
@@ -326,20 +327,6 @@ function applyEditorChange(editor: Editor, before: string, after: string): void 
 			],
 		});
 	});
-}
-
-function findCurrentBlock(
-	parsed: ParsedNote,
-	target: VariantBlock,
-): VariantBlock | undefined {
-	return (
-		parsed.blocks.find((block) => block.identityKey === target.identityKey) ??
-		parsed.blocks.find(
-			(block) =>
-				block.fingerprint === target.fingerprint &&
-				block.opening.text === target.opening.text,
-		)
-	);
 }
 
 function resolveFile(app: App, path: string): TFile {

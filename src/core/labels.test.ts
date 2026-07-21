@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseNote } from './parser';
 import { collectLabelCatalog, filterLabelCatalog } from './labels';
+import { resolveCurrentBlock } from './block-resolution';
 
 describe('current-note label catalog', () => {
 	it('ranks valid labels by frequency and then first appearance', () => {
@@ -27,5 +28,25 @@ describe('current-note label catalog', () => {
 				(entry) => entry.label,
 			),
 		).toEqual(['Long version']);
+	});
+
+	it('excludes every current box label after a stale block gains a variant', () => {
+		const before = parseNote([
+			':::: variants', '::: A', 'One', ':::', '::: B', 'Two', ':::', '::::',
+		].join('\n')).blocks[0]!;
+		const parsed = parseNote([
+			':::: variants', '::: A', 'One', ':::', '::: B', 'Two', ':::', '::: C', 'Three', ':::', '::::',
+			':::: variants', '::: A', 'Other', ':::', '::: D', 'Four', ':::', '::::',
+		].join('\n'));
+		const current = resolveCurrentBlock(before, parsed.blocks)!;
+		const excluded = new Set(
+			current.variants.map((variant) => variant.normalizedLabel),
+		);
+
+		expect(
+			filterLabelCatalog(collectLabelCatalog(parsed.blocks), '', excluded).map(
+				(entry) => entry.label,
+			),
+		).toEqual(['D']);
 	});
 });

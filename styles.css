@@ -9,6 +9,7 @@
 .section-variants-root {
 	--section-variants-min-width: 320px;
 	--section-variants-rule: var(--background-modifier-border);
+	--section-variants-control-size: 22px;
 	position: relative;
 	margin-block: var(--size-4-4);
 	padding-block: var(--size-4-3);
@@ -48,6 +49,7 @@
 	background: var(--background-modifier-border);
 }
 
+.section-variants-add-variant,
 .section-variants-restore-columns {
 	flex: 0 0 auto;
 	width: 22px;
@@ -65,6 +67,10 @@
 	padding: 2px;
 	border-radius: var(--radius-s);
 	background: var(--background-primary);
+}
+
+.section-variants-root.has-block-name > .section-variants-toolbar {
+	top: calc(var(--size-4-3) + var(--size-4-3) - 2px);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -235,16 +241,31 @@ body.is-mobile .section-variants-context-menu-item {
 /* ---------------------------------------------------------------- content */
 
 .section-variants-content {
+	position: relative;
 	min-width: 0;
 	padding: var(--size-4-3);
 	border: 1px solid var(--section-variants-rule, var(--background-modifier-border));
 	border-radius: var(--radius-s);
 }
 
+.section-variants-content.has-block-name {
+	padding-block-start: calc(
+		var(--size-4-3) + var(--section-variants-control-size) + var(--size-2-1)
+	);
+}
+
 .section-variants-block-name {
-	grid-column: 1 / -1;
+	position: absolute;
+	top: var(--size-4-3);
+	left: var(--size-4-3);
+	right: calc(
+		var(--size-4-3) + var(--section-variants-control-size) + var(--size-2-2)
+	);
+	display: flex;
+	align-items: center;
 	min-width: 0;
-	margin-block-end: var(--size-4-2);
+	min-height: var(--section-variants-control-size);
+	margin: 0;
 	overflow: hidden;
 	color: var(--text-muted);
 	font-size: var(--font-ui-small);
@@ -350,6 +371,20 @@ body.is-mobile .section-variants-context-menu-item {
 	width: 22px;
 	height: 22px;
 	padding: 3px;
+}
+
+/* A leading heading starts at the variant's content edge. Later headings keep
+ * Obsidian's normal prose rhythm. */
+.section-variants-panel
+	> .section-variants-column-header
+	+ :is(h1, h2, h3, h4, h5, h6),
+.section-variants-panel
+	> .section-variants-column-header
+	+ .section-variants-inline-editor
+	.cm-content
+	> .HyperMD-header:first-child {
+	margin-block-start: 0 !important;
+	padding-block-start: 0 !important;
 }
 
 .section-variants-nested {
@@ -475,6 +510,7 @@ body.is-mobile .section-variants-context-menu-item {
 /* Touch targets. `isDesktopOnly` is false, so these must clear 44px. */
 body.is-mobile .section-variants-segment,
 body.is-mobile .section-variants-marker,
+body.is-mobile .section-variants-add-variant,
 body.is-mobile .section-variants-restore-columns {
 	min-height: 44px;
 }
@@ -484,6 +520,11 @@ body.is-mobile .section-variants-marker {
 	height: 44px;
 }
 
+body.is-mobile .section-variants-root {
+	--section-variants-control-size: 44px;
+}
+
+body.is-mobile .section-variants-add-variant,
 body.is-mobile .section-variants-restore-columns {
 	min-width: 44px;
 }
@@ -496,6 +537,7 @@ body.is-mobile .section-variants-reveal-controls {
 @media (hover: none), (pointer: coarse) {
 	.section-variants-segment,
 	.section-variants-marker,
+	.section-variants-add-variant,
 	.section-variants-restore-columns,
 	.section-variants-column-header button {
 		min-width: 44px;
@@ -582,16 +624,11 @@ body.is-mobile
 
 	.section-variants-root[data-authored-view='columns']
 		> .section-variants-content
-		> .section-variants-panel,
-	.section-variants-root[data-authored-view='auto']
-		> .section-variants-content
 		> .section-variants-panel {
 		display: block !important;
 	}
 
 	.section-variants-root[data-authored-view='columns']
-		> .section-variants-content,
-	.section-variants-root[data-authored-view='auto']
 		> .section-variants-content {
 		display: grid !important;
 		grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)) !important;

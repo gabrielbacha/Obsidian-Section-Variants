@@ -60,6 +60,24 @@ describe('parseNote', () => {
 		expect(parsed.blocks.every((block) => block.valid)).toBe(true);
 	});
 
+	it('maps the retired authored auto view to responsive columns', () => {
+		const source = [
+			':::: {.variants view="auto"}',
+			'::: A',
+			'One',
+			':::',
+			'::: B',
+			'Two',
+			':::',
+			'::::',
+		].join('\n');
+
+		const block = parseNote(source).roots[0];
+		expect(block?.valid).toBe(true);
+		expect(block?.attributes.view).toBe('columns');
+		expect(source).toContain('view="auto"');
+	});
+
 	it('keeps a temporary one-variant block valid', () => {
 		const block = parseNote(
 			[':::: variants', '::: Only', 'Content', ':::', '::::'].join('\n'),

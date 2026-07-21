@@ -17,6 +17,15 @@ describe('presentation safety selectors', () => {
 	);
 	});
 
+	it('gives the block add shortcut a 44px touch target', () => {
+		expect(CSS).toMatch(
+			/body\.is-mobile \.section-variants-add-variant,[^{]*\{[^}]*min-width:\s*44px/su,
+		);
+		expect(CSS).toMatch(
+			/@media \(hover: none\), \(pointer: coarse\)[\s\S]*section-variants-add-variant[\s\S]*min-height:\s*44px/su,
+		);
+	});
+
 	it('keeps attached context submenus viewport-positioned and touch accessible', () => {
 		expect(CSS).toMatch(
 			/\.section-variants-context-menu\s*\{[^}]*position:\s*fixed;[^}]*z-index:/su,
@@ -39,6 +48,28 @@ describe('presentation safety selectors', () => {
 		expect(CSS).not.toContain('section-variants-live-border-line');
 		expect(CSS).not.toContain('section-variants-live-anchor');
 		expect(CSS).toContain('.section-variants-reveal-controls');
+	});
+
+	it('keeps a box name out of the responsive grid and aligned with controls', () => {
+		expect(CSS).toMatch(
+			/\.section-variants-block-name\s*\{[^}]*position:\s*absolute/su,
+		);
+		expect(CSS).toMatch(
+			/\.section-variants-content\.has-block-name\s*\{[^}]*padding-block-start:/su,
+		);
+		expect(CSS).toMatch(
+			/\.section-variants-root\.has-block-name\s*>\s*\.section-variants-toolbar\s*\{[^}]*top:/su,
+		);
+		expect(CSS).toMatch(
+			/grid-template-columns:\s*repeat\(\s*auto-fit,[\s\S]*1fr/su,
+		);
+	});
+
+	it('removes spacing only from a leading variant heading', () => {
+		expect(CSS).toContain('> .HyperMD-header:first-child');
+		expect(CSS).toMatch(
+			/section-variants-column-header[\s\S]*\+ :is\(h1, h2, h3, h4, h5, h6\)[\s\S]*margin-block-start:\s*0 !important/su,
+		);
 	});
 
 	it('keeps the toolbar inside the widget instead of translating it into clipping', () => {

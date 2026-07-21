@@ -8,7 +8,7 @@ import {
 import { findBlockAtOffset, normalizeLabel, ViewMode } from './core/types';
 import type SectionVariantsPlugin from './main';
 
-const VIEW_ORDER: ViewMode[] = ['toggle', 'columns', 'auto'];
+const VIEW_ORDER: ViewMode[] = ['toggle', 'columns'];
 
 export function registerCommands(plugin: SectionVariantsPlugin): void {
 	plugin.addCommand({

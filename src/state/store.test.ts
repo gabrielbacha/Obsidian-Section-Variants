@@ -54,7 +54,7 @@ describe('state migration', () => {
 		});
 		expect(migrated.data.notes['Note.md']).toEqual({
 			globalLabel: 'B',
-			globalView: 'auto',
+			globalView: 'columns',
 			stickyVisible: false,
 			blocks: {
 				'block:stable': {
@@ -78,7 +78,7 @@ describe('state migration', () => {
 		const migrated = migrateData({
 			version: 2,
 			vaultToken: 'v2-token',
-			settings: {},
+			settings: { defaultView: 'auto' },
 			notes: {
 				'Note.md': {
 					globalLabel: 'B',
@@ -98,6 +98,7 @@ describe('state migration', () => {
 		});
 
 		expect(migrated.data.version).toBe(3);
+		expect(migrated.data.settings.defaultView).toBe('columns');
 		expect(migrated.data.notes['Note.md']).toMatchObject({
 			globalLabel: 'B',
 			globalView: 'columns',
@@ -105,7 +106,7 @@ describe('state migration', () => {
 			blocks: {
 				'block:one': {
 					selectedLabel: 'B',
-					view: 'auto',
+					view: 'columns',
 					savedHiddenLabels: ['A'],
 					labelMode: 'authored',
 					viewMode: 'authored',

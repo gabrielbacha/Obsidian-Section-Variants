@@ -145,7 +145,7 @@ Supported attributes:
 | ----------- | ------------------------------------ |
 | `#id`       | Stable semantic identifier           |
 | `name`      | Optional title rendered for the whole box |
-| `view`      | `toggle`, `columns`, or `auto`       |
+| `view`      | `toggle` or `columns`                |
 | `default`   | Authored default label               |
 | `widths`    | CSS grid track values                |
 | `min-width` | Minimum column width before stacking |
@@ -187,9 +187,9 @@ widths="1fr 1fr 2fr"
 
 Invalid values fall back to equal widths.
 
-### 7.3 Auto
+### 7.3 Legacy Auto compatibility
 
-Uses columns when sufficient width exists and toggle or stacked presentation on narrow surfaces.
+Existing `view="auto"` source remains valid and resolves to responsive Columns. Auto is not offered for new state or authored configuration because Columns already adapts to the available width.
 
 ### 7.4 Responsive overrides
 
@@ -206,14 +206,15 @@ The default is `responsive`.
 Each valid rendered block has a quiet continuous border and a compact layers marker. Hovering or focusing the block reveals its variant labels and view choices:
 
 ```text
-      A | B | C    Toggle | Columns | Auto    ◉
+      A | B | C | +    Toggle | Columns    ◉
 ```
 
 Behavior:
 
 - clicking a label changes that block
 - `Shift + click` applies the label to every matching block in the note
-- the hover/focus surface exposes toggle, columns, and auto view modes
+- the adjacent Add button opens the current block's Add variant dialog
+- the hover/focus surface exposes toggle and columns view modes
 - the marker menu contains:
   - add variant
   - rename variant, with an attached hover/focus target submenu and confirmation
@@ -323,7 +324,7 @@ No detailed text is shown until hover or focus.
 
 - Toggle mode renders only the selected variant.
 - Columns mode renders all visible variants.
-- Auto mode responds to available width.
+- Legacy Auto source renders as responsive Columns.
 - Fence mapping is restricted to each postprocessor section's reported source lines and requires exact text and order.
 - Pending sections are aggregated so blocks split across render chunks can mount after both boundaries arrive; later virtualized sections are processed independently.
 - Incomplete or ambiguous mappings remain fully visible with a warning.
