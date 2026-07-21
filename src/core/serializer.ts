@@ -1,6 +1,7 @@
 import { SAFE_SHORTHAND_LABEL } from './attributes';
 import {
 	ContainerAttributes,
+	normalizeLabel,
 	SerializeOptions,
 	SerializedBlock,
 } from './types';
@@ -12,7 +13,7 @@ export function serializeVariantsBlock(
 	if (labels.length < 2 || labels.some((label) => !label)) {
 		throw new Error('At least two nonempty labels are required.');
 	}
-	const normalized = labels.map((label) => label.toLocaleLowerCase());
+	const normalized = labels.map(normalizeLabel);
 	if (new Set(normalized).size !== normalized.length) {
 		throw new Error('Labels must be unique, ignoring case.');
 	}

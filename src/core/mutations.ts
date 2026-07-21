@@ -9,21 +9,40 @@ import {
 	VariantBlock,
 } from './types';
 
+export interface BlockIdentityMapping {
+	before: VariantBlock;
+	after: VariantBlock;
+}
+
+export interface StableIdMutationResult extends BlockIdentityMapping {
+	id: string;
+}
+
+export interface RenameMutationResult {
+	oldLabel: string;
+	newLabel: string;
+	acrossNote: boolean;
+	mappings: BlockIdentityMapping[];
+}
+
 export async function addStableBlockId(
 	app: App,
 	path: string,
 	target: VariantBlock,
 	parse: (source: string) => ParsedNote,
-): Promise<string> {
+): Promise<StableIdMutationResult> {
 	let id = '';
-	await processTarget(app, path, target, parse, (source, current) => {
+	const mapping = await processTarget(app, path, target, parse, (source, current) => {
 		if (!current.closing) throw new Error('Close the variants block before adding an ID.');
 		// Generated here so it can be checked against IDs already in the note.
 		id = `variants-${randomId(existingIds(source))}`;
 		const insertion = current.closing.to;
-		return `${source.slice(0, insertion)}\n^${id}${source.slice(insertion)}`;
+		const lineBreak = source.slice(insertion, insertion + 2) === '\r\n'
+			? '\r\n'
+			: '\n';
+		return `${source.slice(0, insertion)}${lineBreak}^${id}${source.slice(insertion)}`;
 	});
-	return id;
+	return { id, ...mapping };
 }
 
 export async function fixMissingClosers(
@@ -39,8 +58,9 @@ export async function fixMissingClosers(
 		const missingVariant = current.variants.some((variant) => !variant.closing);
 		const inner = ':'.repeat(Math.max(3, current.opening.colonCount - 1));
 		const outer = ':'.repeat(current.opening.colonCount);
-		const prefix = source.endsWith('\n') ? '' : '\n';
-		return `${source}${prefix}${missingVariant ? `${inner}\n` : ''}${outer}`;
+		const lineBreak = source.includes('\r\n') ? '\r\n' : '\n';
+		const prefix = source.endsWith('\n') ? '' : lineBreak;
+		return `${source}${prefix}${missingVariant ? `${inner}${lineBreak}` : ''}${outer}`;
 	});
 }
 
@@ -50,8 +70,8 @@ export async function updateBlockAttributes(
 	target: VariantBlock,
 	attributes: ContainerAttributes,
 	parse: (source: string) => ParsedNote,
-): Promise<void> {
-	await processTarget(app, path, target, parse, (source, current) => {
+): Promise<BlockIdentityMapping> {
+	return processTarget(app, path, target, parse, (source, current) => {
 		const opening = serializeContainerOpening(
 			current.opening.colonCount,
 			attributes,
@@ -68,19 +88,24 @@ export async function renameVariant(
 	newLabel: string,
 	acrossNote: boolean,
 	parse: (source: string) => ParsedNote,
-): Promise<void> {
+): Promise<RenameMutationResult> {
 	const trimmed = newLabel.trim();
 	if (!trimmed || /[\r\n]/u.test(trimmed)) {
 		throw new Error('Labels must be nonempty and fit on one line.');
 	}
 	const file = resolveFile(app, path);
+	let result: RenameMutationResult | undefined;
 	await app.vault.process(file, (source) => {
 		const parsed = parse(source);
 		const currentTarget = findCurrentBlock(parsed, target);
 		if (!currentTarget) throw new Error('The variants block changed. Reopen rename and try again.');
+		if (!currentTarget.valid) throw new Error('Fix this variants block before renaming its labels.');
 		const normalizedOld = normalizeLabel(oldLabel);
-		const blocks = acrossNote ? parsed.blocks : [currentTarget];
+		const blocks = acrossNote
+			? parsed.blocks.filter((block) => block.valid)
+			: [currentTarget];
 		const edits: Array<{ from: number; to: number; text: string }> = [];
+		const affectedIndices: number[] = [];
 
 		for (const block of blocks) {
 			const existing = block.variants.find(
@@ -90,6 +115,7 @@ export async function renameVariant(
 				(variant) => variant.normalizedLabel === normalizedOld,
 			);
 			if (!renamed) continue;
+			affectedIndices.push(parsed.blocks.indexOf(block));
 			if (existing && existing !== renamed) {
 				throw new Error(`Block on line ${block.opening.lineStart + 1} already has label ${trimmed}.`);
 			}
@@ -113,8 +139,21 @@ export async function renameVariant(
 			}
 		}
 
-		return applyEdits(source, edits);
+		const changed = applyEdits(source, edits);
+		const reparsed = parse(changed);
+		const mappings = affectedIndices.map((index) => {
+			const before = parsed.blocks[index];
+			const after = reparsed.blocks[index];
+			if (!before || !after) {
+				throw new Error('The variants block could not be identified after renaming.');
+			}
+			return { before, after };
+		});
+		result = { oldLabel, newLabel: trimmed, acrossNote, mappings };
+		return changed;
 	});
+	if (!result) throw new Error('The rename did not complete.');
+	return result;
 }
 
 async function processTarget(
@@ -123,13 +162,22 @@ async function processTarget(
 	target: VariantBlock,
 	parse: (source: string) => ParsedNote,
 	change: (source: string, current: VariantBlock) => string,
-): Promise<void> {
+): Promise<BlockIdentityMapping> {
 	const file = resolveFile(app, path);
+	let mapping: BlockIdentityMapping | undefined;
 	await app.vault.process(file, (source) => {
-		const current = findCurrentBlock(parse(source), target);
+		const parsed = parse(source);
+		const current = findCurrentBlock(parsed, target);
 		if (!current) throw new Error('The variants block changed. Try the action again.');
-		return change(source, current);
+		const index = parsed.blocks.indexOf(current);
+		const changed = change(source, current);
+		const after = parse(changed).blocks[index];
+		if (!after) throw new Error('The variants block could not be identified after the change.');
+		mapping = { before: current, after };
+		return changed;
 	});
+	if (!mapping) throw new Error('The variants block change did not complete.');
+	return mapping;
 }
 
 function findCurrentBlock(

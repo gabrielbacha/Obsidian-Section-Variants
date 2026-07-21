@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { parseNote } from './parser';
 import {
 	applyGlobalLabel,
+	applyGlobalView,
 	createNoteState,
 	DEFAULT_SETTINGS,
 	ensureBlockState,
@@ -82,5 +83,55 @@ describe('state model', () => {
 		expect(
 			resolveBlockState(block, note, DEFAULT_SETTINGS, new Set()).hiddenLabels.size,
 		).toBe(0);
+	});
+
+	it('keeps an authored reset independent of later global changes', () => {
+		const parsed = parseNote(SOURCE);
+		const block = parsed.blocks[0]!;
+		const note = createNoteState();
+		note.globalLabel = 'B';
+		note.globalView = 'columns';
+		const state = ensureBlockState(note, block.identityKey);
+		state.labelMode = 'authored';
+		state.viewMode = 'authored';
+
+		expect(resolveBlockState(block, note, DEFAULT_SETTINGS)).toMatchObject({
+			selectedLabel: 'A',
+			view: 'toggle',
+		});
+		note.globalLabel = 'A';
+		note.globalView = 'auto';
+		expect(resolveBlockState(block, note, DEFAULT_SETTINGS)).toMatchObject({
+			selectedLabel: 'A',
+			view: 'toggle',
+		});
+	});
+
+	it('global actions clear the corresponding authored marker', () => {
+		const parsed = parseNote(SOURCE);
+		const note = createNoteState();
+		for (const block of parsed.blocks) {
+			const state = ensureBlockState(note, block.identityKey);
+			state.labelMode = 'authored';
+			state.viewMode = 'authored';
+		}
+
+		applyGlobalLabel(note, parsed, DEFAULT_SETTINGS, 'B');
+		applyGlobalView(note, parsed, 'columns');
+
+		expect(note.blocks[parsed.blocks[0]!.identityKey]?.labelMode).toBeUndefined();
+		expect(note.blocks[parsed.blocks[0]!.identityKey]?.viewMode).toBeUndefined();
+	});
+
+	it('excludes invalid blocks from global result counts and mutations', () => {
+		const parsed = parseNote(`${SOURCE}\n\n:::: variants\n::: A\nOnly one\n:::\n::::`);
+		const invalid = parsed.blocks.at(-1)!;
+		const note = createNoteState();
+		ensureBlockState(note, invalid.identityKey).labelMode = 'authored';
+
+		const result = applyGlobalLabel(note, parsed, DEFAULT_SETTINGS, 'A');
+
+		expect(result.applied + result.skipped).toBe(2);
+		expect(note.blocks[invalid.identityKey]?.labelMode).toBe('authored');
 	});
 });

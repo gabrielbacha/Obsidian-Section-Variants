@@ -1,8 +1,9 @@
-import { MarkdownView, Menu, Notice, setIcon } from 'obsidian';
+import { MarkdownView, Menu, Notice } from 'obsidian';
 import { normalizeLabel, ViewMode } from '../core/types';
 import { unionLabels } from '../core/labels';
 import { SectionVariantsHost } from '../plugin-host';
 import { createSegmentedControl, VIEW_MODE_SEGMENTS } from './segmented-control';
+import { createVariantMarker } from './variant-marker';
 
 export class StickyControlManager {
 	private readonly controls = new Map<MarkdownView, HTMLElement>();
@@ -65,23 +66,35 @@ export class StickyControlManager {
 				normalizeLabel(this.host.store.resolve(path, block).selectedLabel),
 			),
 		);
-		if (currentLabels.size > 1) {
-			control.createSpan({
-				cls: 'section-variants-mixed',
-				text: 'Mixed',
-				attr: { 'aria-label': 'Blocks currently show different variants' },
-			});
-		}
-
 		const labels = unionLabels(blocks);
 		const activeLabel =
 			currentLabels.size === 1
 				? labels.find((label) => currentLabels.has(normalizeLabel(label)))
 				: undefined;
+		const views = new Set(
+			blocks.map((block) => this.host.store.resolve(path, block).view),
+		);
+		const activeView: ViewMode | undefined =
+			views.size === 1 ? [...views][0] : undefined;
+		const differs = blocks.some(
+			(block) => this.host.store.resolve(path, block).differsFromAuthored,
+		);
+		createVariantMarker(control, {
+			ariaLabel: 'Open note variants menu',
+			tooltip: [
+				activeLabel ? `Current variant: ${activeLabel}` : 'Current variant: Mixed',
+				activeView ? `Current view: ${activeView}` : 'Current view: Mixed',
+				differs
+					? 'Some blocks differ from authored defaults'
+					: 'All blocks follow authored defaults',
+			].join('\n'),
+			differs: differs && this.host.store.settings.showIndicators,
+			mixed: currentLabels.size > 1 || views.size > 1,
+			onClick: (event) => this.openMenu(event, path, parsed, activeView),
+		});
 		createSegmentedControl(control, {
 			cls: 'section-variants-labels',
 			ariaLabel: 'Apply variant across note',
-			emphasized: true,
 			value: activeLabel,
 			options: labels.map((label) => ({
 				value: label,
@@ -95,57 +108,32 @@ export class StickyControlManager {
 				);
 			},
 		});
+	}
 
-		const views = new Set(
-			blocks.map((block) => this.host.store.resolve(path, block).view),
+	private openMenu(
+		event: MouseEvent,
+		path: string,
+		parsed: ReturnType<SectionVariantsHost['parse']>,
+		activeView: ViewMode | undefined,
+	): void {
+		const menu = new Menu();
+		for (const view of VIEW_MODE_SEGMENTS) {
+			menu.addItem((item) =>
+				item
+					.setTitle(view.tooltip ?? view.label)
+					.setIcon(view.icon ?? 'circle')
+					.setChecked(activeView === view.value)
+					.onClick(() => {
+						this.host.store.applyViewAcrossNote(path, parsed, view.value);
+					}),
+			);
+		}
+		menu.addSeparator();
+		menu.addItem((item) =>
+			item.setTitle('Hide note control').setIcon('x').onClick(() => {
+				this.host.store.setStickyVisible(path, false);
+			}),
 		);
-		// Undefined when blocks disagree, which leaves every segment unselected.
-		const activeView: ViewMode | undefined =
-			views.size === 1 ? [...views][0] : undefined;
-		createSegmentedControl(control, {
-			cls: 'section-variants-view-segments',
-			ariaLabel: 'Apply view across note',
-			value: activeView,
-			options: VIEW_MODE_SEGMENTS,
-			onSelect: (next) => {
-				this.host.store.applyViewAcrossNote(path, parsed, next);
-			},
-		});
-
-		const menuButton = control.createEl('button', {
-			type: 'button',
-			cls: 'clickable-icon',
-			attr: { 'aria-label': 'Open note variants menu' },
-		});
-		setIcon(menuButton, 'more-horizontal');
-		menuButton.addEventListener('click', (event) => {
-			const menu = new Menu();
-			menu.addItem((item) =>
-				item.setTitle('Collapse inactive content').setIcon('panel-top-close').onClick(() => {
-					this.host.store.setNoteInactiveBehavior(path, 'collapsed');
-				}),
-			);
-			menu.addItem((item) =>
-				item.setTitle('Hide inactive content').setIcon('eye-off').onClick(() => {
-					this.host.store.setNoteInactiveBehavior(path, 'hidden');
-				}),
-			);
-			menu.addItem((item) =>
-				item.setTitle('Use vault inactive-content setting').setIcon('undo-2').onClick(() => {
-					this.host.store.setNoteInactiveBehavior(path, undefined);
-				}),
-			);
-			menu.showAtMouseEvent(event);
-		});
-
-		const close = control.createEl('button', {
-			type: 'button',
-			cls: 'clickable-icon',
-			attr: { 'aria-label': 'Hide sticky note control' },
-		});
-		setIcon(close, 'x');
-		close.addEventListener('click', () =>
-			this.host.store.setStickyVisible(path, false),
-		);
+		menu.showAtMouseEvent(event);
 	}
 }

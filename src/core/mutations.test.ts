@@ -48,10 +48,12 @@ describe('addStableBlockId', () => {
 	it('appends a block ID after the closing fence', async () => {
 		const { app, path, read, firstBlock } = setup(TWO_VARIANTS);
 
-		const id = await addStableBlockId(app, path, firstBlock(), parse);
+		const result = await addStableBlockId(app, path, firstBlock(), parse);
 
-		expect(id).toMatch(/^variants-[a-z0-9]{6}$/u);
-		expect(read()).toContain(`::::\n^${id}`);
+		expect(result.id).toMatch(/^variants-[a-z0-9]{6}$/u);
+		expect(result.before.blockId).toBeUndefined();
+		expect(result.after.blockId).toBe(result.id);
+		expect(read()).toContain(`::::\n^${result.id}`);
 	});
 
 	it('leaves the authored content untouched', async () => {
@@ -75,9 +77,9 @@ describe('addStableBlockId', () => {
 
 		const second = await addStableBlockId(app, path, firstBlock(), parse);
 
-		expect(second).not.toBe(first);
-		expect(read()).toContain(first);
-		expect(read()).toContain(second);
+		expect(second.id).not.toBe(first.id);
+		expect(read()).toContain(first.id);
+		expect(read()).toContain(second.id);
 	});
 
 	it('refuses to add an ID when the block has no closing fence', async () => {
@@ -88,6 +90,15 @@ describe('addStableBlockId', () => {
 		await expect(
 			addStableBlockId(app, path, firstBlock(), parse),
 		).rejects.toThrow(/close the variants block/iu);
+	});
+
+	it('preserves CRLF line endings around an inserted ID', async () => {
+		const source = TWO_VARIANTS.replace(/\n/gu, '\r\n');
+		const { app, path, read, firstBlock } = setup(source);
+
+		const result = await addStableBlockId(app, path, firstBlock(), parse);
+
+		expect(read()).toContain(`::::\r\n^${result.id}\r\n`);
 	});
 });
 
@@ -153,5 +164,25 @@ describe('renameVariant', () => {
 		expect(read()).toContain('Alpha.');
 		expect(read()).toContain('Beta.');
 		expect(parse(read()).blocks[0]?.variants[1]?.label).toBe('B');
+	});
+
+	it('returns old/new mappings without mutating the supplied parse result', async () => {
+		const { app, path, firstBlock } = setup(TWO_VARIANTS);
+		const original = firstBlock();
+
+		const result = await renameVariant(app, path, original, 'A', 'Alpha', false, parse);
+
+		expect(original.variants[0]?.label).toBe('A');
+		expect(result.mappings[0]?.before).not.toBe(result.mappings[0]?.after);
+		expect(result.mappings[0]?.after.variants[0]?.label).toBe('Alpha');
+	});
+
+	it('supports case-only renames', async () => {
+		const { app, path, read, firstBlock } = setup(TWO_VARIANTS);
+
+		const result = await renameVariant(app, path, firstBlock(), 'A', 'a', false, parse);
+
+		expect(result.mappings).toHaveLength(1);
+		expect(parse(read()).blocks[0]?.variants[0]?.label).toBe('a');
 	});
 });

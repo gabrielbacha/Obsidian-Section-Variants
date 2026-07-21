@@ -18,8 +18,6 @@ export interface SegmentedControlOptions<T extends string> {
 	/** Accessible name for the group. */
 	ariaLabel: string;
 	cls?: string;
-	/** Renders the selected segment with the accent fill rather than a subtle wash. */
-	emphasized?: boolean;
 }
 
 /**
@@ -38,7 +36,6 @@ export function createSegmentedControl<T extends string>(
 		onSelect,
 		ariaLabel,
 		cls,
-		emphasized = false,
 	}: SegmentedControlOptions<T>,
 ): HTMLElement {
 	const group = parent.createDiv({
@@ -46,7 +43,6 @@ export function createSegmentedControl<T extends string>(
 	});
 	group.setAttribute('role', 'radiogroup');
 	group.setAttribute('aria-label', ariaLabel);
-	group.toggleClass('is-emphasized', emphasized);
 
 	const buttons: HTMLButtonElement[] = [];
 	// When nothing matches (e.g. blocks disagree), the first segment carries the

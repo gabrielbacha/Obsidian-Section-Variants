@@ -9,7 +9,10 @@ export interface SectionVariantsHost {
 	refreshAllViews(path?: string): void;
 	openBlockConfiguration(path: string, block: VariantBlock): void;
 	openRenameVariant(path: string, block: VariantBlock): void;
-	ensurePersistentIdentity(path: string, block: VariantBlock): Promise<boolean>;
+	ensurePersistentIdentity(
+		path: string,
+		block: VariantBlock,
+	): Promise<VariantBlock | undefined>;
 	addStableBlockId(path: string, block: VariantBlock): Promise<void>;
 	fixBlock(path: string, block: VariantBlock): Promise<void>;
 }

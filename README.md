@@ -33,15 +33,15 @@ The canonical container is `variants`. Additional aliases can be enabled in **Se
 
 ## Using variants
 
-- Select a label in a block toolbar to switch that block.
+- Hover or focus a bordered block, then select a label to switch that block.
 - Shift-select a label to apply it to every matching block in the note.
-- Use **Toggle**, **Columns**, or **Auto** for each block.
+- Open the small layers marker to choose **Toggle**, **Columns**, or **Auto** and access advanced actions.
 - Hide individual columns temporarily and explicitly save visibility when wanted.
 - Use the sticky note control to apply labels or views across a note.
-- In Live Preview columns, select **Edit** on any column to reveal its source. Select **Done editing** or press `Escape` when finished.
+- In Live Preview columns, select **Edit** on any column to reveal its source. Choose **Done editing** from the marker menu or press `Escape` when finished.
 - Source Mode always displays the complete Markdown source.
 
-Open the command palette for insertion, cycling, note-wide actions, resets, sticky-control visibility, inactive Live Preview visibility, and HTML export. No default hotkeys are assigned.
+Open the command palette for insertion, cycling, note-wide actions, resets, sticky-control visibility, and HTML export. No default hotkeys are assigned.
 
 ## Creating blocks
 
@@ -55,11 +55,17 @@ Typing a variant opener inside an existing block also suggests labels already us
 
 ## State and safety
 
-Authored defaults remain in Markdown. Current selections, view choices, pinned toolbars, and explicitly saved visibility live in plugin data. Ordinary switching never rewrites the note.
+Authored defaults remain in Markdown. Current selections, view choices, sticky-control state, and explicitly saved column visibility live in plugin data. Ordinary switching never rewrites the note.
+
+**Reset this block** follows its authored label and view even when note-wide state exists; later authored edits are still picked up. **Follow global state** removes both local choices and authored-reset markers, using the note-wide label when compatible and the note-wide view when present. Stable-ID creation and label renames migrate existing selections, hidden columns, edit state, and affected note-wide labels to the new identity.
+
+Inactive variants are hidden in Live Preview. While editing a visible variant, the plugin prevents Backspace, Delete, selections, paste, and other editor transactions from crossing its hidden fences. Switch to Source mode whenever you intend to edit the structure itself.
 
 Blocks use an explicit Pandoc ID, a following Obsidian block ID, or a structural fingerprint for persistence. If duplicate fingerprints become ambiguous, use **Add stable block ID** or enable automatic IDs.
 
 Malformed blocks remain fully visible. The warning explains the exact problem, and automatic fixing is offered only for an unambiguous missing final fence.
+
+Reading View maps fences only within Obsidian's reported source section and requires an exact ordered match. Sections rendered later through virtualization and blocks split across render chunks are aggregated safely; incomplete or ambiguous mappings remain visible with a warning. Pop-out windows use their own document for mounts and ranges.
 
 ## Export
 

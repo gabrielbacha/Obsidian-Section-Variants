@@ -39,15 +39,6 @@ export class SectionVariantsSettingTab extends PluginSettingTab {
 				},
 			},
 			{
-				name: 'Inactive content in live preview',
-				desc: 'Collapse inactive variants to a compact placeholder or hide them completely.',
-				control: {
-					type: 'dropdown',
-					key: 'livePreviewInactive',
-					options: { collapsed: 'Collapsed', hidden: 'Hidden' },
-				},
-			},
-			{
 				name: 'Responsive columns',
 				desc: 'Choose how columns behave when space is limited.',
 				control: {
@@ -65,15 +56,6 @@ export class SectionVariantsSettingTab extends PluginSettingTab {
 				'Show the note-wide control when a note contains at least two valid variants blocks.',
 				'stickyControlEnabled',
 			),
-			{
-				name: 'Reading view toolbar',
-				desc: 'Reveal the block toolbar on hover and focus, or keep it always visible.',
-				control: {
-					type: 'dropdown',
-					key: 'toolbarVisibility',
-					options: { hover: 'Show on hover or focus', always: 'Always show' },
-				},
-			},
 			definitionToggle(
 				'Create block IDs automatically',
 				'When persistent state is ambiguous, add an Obsidian block ID after the closing fence.',
@@ -209,7 +191,6 @@ export class SectionVariantsSettingTab extends PluginSettingTab {
 			...patch,
 		});
 		await this.plugin.store.flush();
-		this.plugin.refreshAllViews();
 	}
 }
 

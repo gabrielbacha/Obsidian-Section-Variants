@@ -1,6 +1,5 @@
 export type ViewMode = 'toggle' | 'columns' | 'auto';
 export type ResponsiveMode = 'responsive' | 'stack' | 'scroll';
-export type InactiveBehavior = 'collapsed' | 'hidden';
 
 export interface SourceRange {
 	from: number;
@@ -54,6 +53,8 @@ export interface VariantBlock {
 	valid: boolean;
 	range: SourceRange;
 	identityKey: string;
+	/** Previous locale-sensitive keys that may exist in pre-v3 saved data. */
+	legacyIdentityKeys: string[];
 	identityAmbiguous: boolean;
 	fingerprint: string;
 	parent?: VariantBlock;
@@ -85,7 +86,7 @@ export interface SerializedBlock {
 }
 
 export function normalizeLabel(label: string): string {
-	return label.trim().toLocaleLowerCase();
+	return label.trim().toLowerCase();
 }
 
 export function effectiveAuthoredLabel(block: VariantBlock): string {

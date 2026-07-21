@@ -169,6 +169,7 @@ function createBlock(
 		valid: false,
 		range: { ...opening },
 		identityKey: '',
+		legacyIdentityKeys: [],
 		identityAmbiguous: false,
 		fingerprint: '',
 		parent,
@@ -360,6 +361,8 @@ function validateUniqueIds(blocks: VariantBlock[]): void {
 
 function assignIdentities(blocks: VariantBlock[]): void {
 	const fingerprints = new Map<string, VariantBlock[]>();
+	const legacyFingerprints = new Map<string, VariantBlock[]>();
+	const legacyByBlock = new Map<VariantBlock, string>();
 	for (const block of blocks) {
 		block.fingerprint = hashText(
 			block.variants.map((variant) => variant.normalizedLabel).join('\u0000'),
@@ -375,11 +378,31 @@ function assignIdentities(blocks: VariantBlock[]): void {
 		const entries = fingerprints.get(block.fingerprint) ?? [];
 		entries.push(block);
 		fingerprints.set(block.fingerprint, entries);
+		const legacyFingerprint = hashText(
+			block.variants
+				.map((variant) => variant.label.trim().toLocaleLowerCase())
+				.join('\u0000'),
+		);
+		legacyByBlock.set(block, legacyFingerprint);
+		const legacyEntries = legacyFingerprints.get(legacyFingerprint) ?? [];
+		legacyEntries.push(block);
+		legacyFingerprints.set(legacyFingerprint, legacyEntries);
 	}
 	for (const [fingerprint, entries] of fingerprints) {
 		entries.forEach((block, index) => {
 			block.identityKey = `fingerprint:${fingerprint}:${index}`;
 			block.identityAmbiguous = entries.length > 1;
+			const legacyFingerprint = legacyByBlock.get(block);
+			const legacyEntries = legacyFingerprint
+				? legacyFingerprints.get(legacyFingerprint)
+				: undefined;
+			const legacyIndex = legacyEntries?.indexOf(block) ?? -1;
+			const legacyKey =
+				legacyFingerprint && legacyIndex >= 0
+					? `fingerprint:${legacyFingerprint}:${legacyIndex}`
+					: undefined;
+			block.legacyIdentityKeys =
+				legacyKey && legacyKey !== block.identityKey ? [legacyKey] : [];
 		});
 	}
 }

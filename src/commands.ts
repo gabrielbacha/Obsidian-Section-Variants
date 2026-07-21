@@ -38,9 +38,9 @@ export function registerCommands(plugin: SectionVariantsPlugin): void {
 		name: 'Open global variant selector',
 		checkCallback: (checking) => {
 			const context = activeContext(plugin);
-			if (!context || context.parsed.blocks.length === 0) return false;
+			if (!context || validBlocks(context.parsed).length === 0) return false;
 			if (!checking) {
-				const labels = unionLabels(context.parsed.blocks);
+				const labels = unionLabels(validBlocks(context.parsed));
 				new ValueSuggestModal(
 					plugin,
 					labels,
@@ -86,7 +86,7 @@ export function registerCommands(plugin: SectionVariantsPlugin): void {
 		name: 'Apply view across note',
 		checkCallback: (checking) => {
 			const context = activeContext(plugin);
-			if (!context || context.parsed.blocks.length === 0) return false;
+			if (!context || validBlocks(context.parsed).length === 0) return false;
 			if (!checking) {
 				new ValueSuggestModal(
 					plugin,
@@ -120,7 +120,7 @@ export function registerCommands(plugin: SectionVariantsPlugin): void {
 		name: 'Reset all blocks to defaults',
 		checkCallback: (checking) => {
 			const context = activeContext(plugin);
-			if (!context || context.parsed.blocks.length === 0) return false;
+			if (!context || validBlocks(context.parsed).length === 0) return false;
 			if (!checking) plugin.store.resetNote(context.path);
 			return true;
 		},
@@ -143,23 +143,11 @@ export function registerCommands(plugin: SectionVariantsPlugin): void {
 	});
 
 	plugin.addCommand({
-		id: 'toggle-inactive-live-preview-visibility',
-		name: 'Toggle inactive live preview visibility',
-		callback: () => {
-			const current = plugin.store.settings.livePreviewInactive;
-			plugin.store.updateSettings({
-				...plugin.store.settings,
-				livePreviewInactive: current === 'collapsed' ? 'hidden' : 'collapsed',
-			});
-		},
-	});
-
-	plugin.addCommand({
 		id: 'export-variants-to-html',
 		name: 'Export variants to HTML',
 		checkCallback: (checking) => {
 			const context = activeContext(plugin);
-			if (!context || context.parsed.blocks.length === 0) return false;
+			if (!context || validBlocks(context.parsed).length === 0) return false;
 			if (!checking) plugin.openHtmlExport();
 			return true;
 		},
@@ -218,8 +206,9 @@ async function setLocalVariantWithIdentity(
 	block: ReturnType<SectionVariantsPlugin['parse']>['blocks'][number],
 	label: string,
 ): Promise<void> {
-	if (!(await plugin.ensurePersistentIdentity(path, block))) return;
-	plugin.store.setSelectedLabel(path, block, label);
+	const persistent = await plugin.ensurePersistentIdentity(path, block);
+	if (!persistent) return;
+	plugin.store.setSelectedLabel(path, persistent, label);
 }
 
 async function setLocalViewWithIdentity(
@@ -228,8 +217,9 @@ async function setLocalViewWithIdentity(
 	block: ReturnType<SectionVariantsPlugin['parse']>['blocks'][number],
 	view: ViewMode,
 ): Promise<void> {
-	if (!(await plugin.ensurePersistentIdentity(path, block))) return;
-	plugin.store.setView(path, block, view);
+	const persistent = await plugin.ensurePersistentIdentity(path, block);
+	if (!persistent) return;
+	plugin.store.setView(path, persistent, view);
 }
 
 function focusedBlock(
@@ -241,7 +231,7 @@ function focusedBlock(
 	if (!path) return undefined;
 	const parsed = plugin.parse(editor.getValue());
 	const block = findBlockAtOffset(parsed, editor.posToOffset(editor.getCursor()));
-	return block ? { path, parsed, block } : undefined;
+	return block?.valid ? { path, parsed, block } : undefined;
 }
 
 function activeContext(plugin: SectionVariantsPlugin) {
@@ -262,6 +252,10 @@ function unionLabels(blocks: ReturnType<SectionVariantsPlugin['parse']>['blocks'
 		}
 	}
 	return labels;
+}
+
+function validBlocks(parsed: ReturnType<SectionVariantsPlugin['parse']>) {
+	return parsed.blocks.filter((block) => block.valid);
 }
 
 class ValueSuggestModal<T extends string> extends FuzzySuggestModal<T> {

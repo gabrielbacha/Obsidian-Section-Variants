@@ -27,7 +27,7 @@ import { HtmlExportModal } from './export/html-export';
 import { SectionVariantsHost } from './plugin-host';
 import { ReadingViewCoordinator } from './reading/coordinator';
 import { SectionVariantsSettingTab } from './settings';
-import { StateStore } from './state/store';
+import { StateStore, StoreChange } from './state/store';
 import {
 	BlockConfigurationModal,
 	InsertVariantsModal,
@@ -54,6 +54,9 @@ export default class SectionVariantsPlugin
 	 */
 	private readonly parseCache = new Map<string, ParsedNote>();
 	private lastAliasesKey?: string;
+	private stickyRefreshTimer?: number;
+	private stickyRefreshPath?: string;
+	private stickyRefreshAll = false;
 
 	async onload(): Promise<void> {
 		this.store = new StateStore(this);
@@ -88,7 +91,7 @@ export default class SectionVariantsPlugin
 			// The parse cache is keyed by source text, so edited content misses
 			// naturally and needs no explicit invalidation here.
 			this.app.workspace.on('editor-change', (_editor, info) => {
-				this.scheduleViewRefresh(info.file?.path);
+				this.scheduleStickyRefresh(info.file?.path);
 			}),
 		);
 		this.registerEvent(
@@ -100,7 +103,7 @@ export default class SectionVariantsPlugin
 			this.app.vault.on('delete', (file) => this.handleDelete(file)),
 		);
 		this.register(
-			this.store.subscribe((path) => this.refreshAllViews(path)),
+			this.store.subscribe((change) => this.handleStoreChange(change)),
 		);
 		this.app.workspace.onLayoutReady(() => {
 			this.pruneMissingNotes();
@@ -109,6 +112,10 @@ export default class SectionVariantsPlugin
 	}
 
 	onunload(): void {
+		if (this.stickyRefreshTimer !== undefined) {
+			window.clearTimeout(this.stickyRefreshTimer);
+			this.stickyRefreshTimer = undefined;
+		}
 		this.stickyControls?.destroy();
 		void this.store?.flush();
 	}
@@ -159,13 +166,15 @@ export default class SectionVariantsPlugin
 
 	openBlockConfiguration(path: string, block: VariantBlock): void {
 		new BlockConfigurationModal(this.app, block, async (attributes) => {
-			await updateBlockAttributes(
+			const mapping = await updateBlockAttributes(
 				this.app,
 				path,
 				block,
 				attributes,
 				(source) => this.parseFresh(source),
 			);
+			this.store.rekeyBlockState(path, mapping.before, mapping.after);
+			await this.store.flush();
 		}).open();
 	}
 
@@ -174,7 +183,7 @@ export default class SectionVariantsPlugin
 			this.app,
 			block,
 			async (oldLabel, newLabel, acrossNote) => {
-				await renameVariant(
+				const result = await renameVariant(
 					this.app,
 					path,
 					block,
@@ -183,6 +192,14 @@ export default class SectionVariantsPlugin
 					acrossNote,
 					(source) => this.parseFresh(source),
 				);
+				this.store.migrateRenamedLabels(
+					path,
+					result.mappings,
+					result.oldLabel,
+					result.newLabel,
+					result.acrossNote,
+				);
+				await this.store.flush();
 			},
 		).open();
 	}
@@ -190,38 +207,34 @@ export default class SectionVariantsPlugin
 	async ensurePersistentIdentity(
 		path: string,
 		block: VariantBlock,
-	): Promise<boolean> {
+	): Promise<VariantBlock | undefined> {
 		if (!block.identityAmbiguous || !this.store.settings.automaticBlockIds) {
-			return true;
+			return block;
 		}
 		try {
-			const id = await addStableBlockId(this.app, path, block, (source) =>
+			const result = await addStableBlockId(this.app, path, block, (source) =>
 				this.parseFresh(source),
 			);
-			/*
-			 * Re-point the in-memory block at its new stable identity so the
-			 * action the user actually clicked completes against the right key.
-			 * Previously this returned false and asked them to click again.
-			 */
-			block.blockId = id;
-			block.identityKey = `block:${id}`;
-			block.identityAmbiguous = false;
-			return true;
+			this.store.rekeyBlockState(path, result.before, result.after);
+			await this.store.flush();
+			return result.after;
 		} catch (error) {
 			new Notice(errorMessage(error));
-			return false;
+			return undefined;
 		}
 	}
 
 	async addStableBlockId(path: string, block: VariantBlock): Promise<void> {
 		try {
-			const id = await addStableBlockId(
+			const result = await addStableBlockId(
 				this.app,
 				path,
 				block,
 				(source) => this.parseFresh(source),
 			);
-			new Notice(`Added block ID ^${id}.`);
+			this.store.rekeyBlockState(path, result.before, result.after);
+			await this.store.flush();
+			new Notice(`Added block ID ^${result.id}.`);
 		} catch (error) {
 			new Notice(errorMessage(error));
 		}
@@ -258,6 +271,29 @@ export default class SectionVariantsPlugin
 		window.setTimeout(() => this.refreshAllViews(path), 0);
 	}
 
+	private scheduleStickyRefresh(path?: string): void {
+		if (this.stickyRefreshTimer !== undefined) {
+			if (this.stickyRefreshPath !== path) this.stickyRefreshAll = true;
+			return;
+		}
+		this.stickyRefreshPath = path;
+		this.stickyRefreshAll = false;
+		this.stickyRefreshTimer = window.setTimeout(() => {
+			this.stickyRefreshTimer = undefined;
+			const refreshPath = this.stickyRefreshAll
+				? undefined
+				: this.stickyRefreshPath;
+			this.stickyRefreshPath = undefined;
+			this.stickyRefreshAll = false;
+			this.stickyControls?.refresh(refreshPath);
+		}, 50);
+	}
+
+	private handleStoreChange(change: StoreChange): void {
+		refreshLivePreviewEditors(change.path);
+		this.stickyControls?.refresh(change.path);
+	}
+
 	private handleDelete(file: TAbstractFile): void {
 		if (file instanceof TFile) this.store.deleteNote(file.path);
 		else if (file instanceof TFolder) this.store.deleteFolder(file.path);
@@ -279,4 +315,3 @@ export default class SectionVariantsPlugin
 		this.store.collectGarbage(existing);
 	}
 }
-

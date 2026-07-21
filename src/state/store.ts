@@ -13,15 +13,15 @@ import {
 } from '../core/state-model';
 import { randomBytes } from '../core/random';
 import {
-	InactiveBehavior,
 	normalizeLabel,
 	ParsedNote,
+	ResponsiveMode,
 	VariantBlock,
 	ViewMode,
 } from '../core/types';
 
 interface StoredData {
-	version: 1;
+	version: 3;
 	vaultToken: string;
 	settings: SectionVariantsSettings;
 	notes: Record<string, PersistedNoteState>;
@@ -29,11 +29,13 @@ interface StoredData {
 	backup?: unknown;
 }
 
-interface DevicePreferences {
-	livePreviewInactive?: InactiveBehavior;
+export interface StoreChange {
+	scope: 'block' | 'note' | 'settings';
+	path?: string;
+	blockKey?: string;
 }
 
-type Listener = (path?: string) => void;
+type Listener = (change: StoreChange) => void;
 
 export class StateStore {
 	settings: SectionVariantsSettings = { ...DEFAULT_SETTINGS };
@@ -46,18 +48,12 @@ export class StateStore {
 	constructor(private readonly plugin: Plugin) {}
 
 	async load(): Promise<void> {
-		const loaded = (await this.plugin.loadData()) as Partial<StoredData> | null;
+		const loaded = (await this.plugin.loadData()) as unknown;
 		const migration = migrateData(loaded);
 		this.data = migration.data;
 		if (migration.warning) new Notice(migration.warning, 10000);
 		this.settings = this.data.settings;
-		const device = this.loadDevicePreferences();
-		if (device.livePreviewInactive) {
-			this.settings = {
-				...this.settings,
-				livePreviewInactive: device.livePreviewInactive,
-			};
-		}
+		this.removeRetiredDevicePreferences();
 	}
 
 	subscribe(listener: Listener): () => void {
@@ -71,6 +67,7 @@ export class StateStore {
 	}
 
 	resolve(path: string, block: VariantBlock): ResolvedBlockState {
+		this.recoverLegacyIdentity(path, block);
 		return resolveBlockState(
 			block,
 			this.getNote(path),
@@ -81,31 +78,40 @@ export class StateStore {
 
 	setSelectedLabel(path: string, block: VariantBlock, label: string): void {
 		const note = this.getNote(path, true) as PersistedNoteState;
-		ensureBlockState(note, block.identityKey).selectedLabel = label;
-		this.changed(path);
+		const state = ensureBlockState(note, block.identityKey);
+		state.selectedLabel = label;
+		delete state.labelMode;
+		this.changed({ scope: 'block', path, blockKey: block.identityKey });
 	}
 
-	followGlobalLabel(path: string, block: VariantBlock): boolean {
-		const note = this.getNote(path);
-		if (!note?.globalLabel) return false;
-		const compatible = block.variants.some(
+	followGlobalState(
+		path: string,
+		block: VariantBlock,
+	): { label: boolean; view: boolean } {
+		const note = this.getNote(path, true) as PersistedNoteState;
+		const label = Boolean(note.globalLabel) && block.variants.some(
 			(variant) =>
 				variant.normalizedLabel === normalizeLabel(note.globalLabel ?? ''),
 		);
-		if (!compatible) return false;
+		const view = note.globalView !== undefined;
 		const state = note.blocks[block.identityKey];
 		if (state) {
 			delete state.selectedLabel;
+			delete state.view;
+			delete state.labelMode;
+			delete state.viewMode;
 			pruneBlockState(note, block.identityKey);
 		}
-		this.changed(path);
-		return true;
+		this.changed({ scope: 'block', path, blockKey: block.identityKey });
+		return { label, view };
 	}
 
 	setView(path: string, block: VariantBlock, view: ViewMode): void {
 		const note = this.getNote(path, true) as PersistedNoteState;
-		ensureBlockState(note, block.identityKey).view = view;
-		this.changed(path);
+		const state = ensureBlockState(note, block.identityKey);
+		state.view = view;
+		delete state.viewMode;
+		this.changed({ scope: 'block', path, blockKey: block.identityKey });
 	}
 
 	applyLabelAcrossNote(
@@ -115,14 +121,14 @@ export class StateStore {
 	): { applied: number; skipped: number } {
 		const note = this.getNote(path, true) as PersistedNoteState;
 		const result = applyGlobalLabel(note, parsed, this.settings, label);
-		this.changed(path);
+		this.changed({ scope: 'note', path });
 		return result;
 	}
 
 	applyViewAcrossNote(path: string, parsed: ParsedNote, view: ViewMode): void {
 		const note = this.getNote(path, true) as PersistedNoteState;
 		applyGlobalView(note, parsed, view);
-		this.changed(path);
+		this.changed({ scope: 'note', path });
 	}
 
 	toggleHidden(path: string, block: VariantBlock, label: string): void {
@@ -135,7 +141,7 @@ export class StateStore {
 		if (hidden.has(normalized)) hidden.delete(normalized);
 		else hidden.add(normalized);
 		this.sessionHidden.set(key, hidden);
-		this.emit(path);
+		this.emit({ scope: 'block', path, blockKey: block.identityKey });
 	}
 
 	saveHidden(path: string, block: VariantBlock): void {
@@ -144,42 +150,13 @@ export class StateStore {
 		const state = ensureBlockState(note, block.identityKey);
 		state.savedHiddenLabels = hidden && hidden.size > 0 ? [...hidden] : undefined;
 		pruneBlockState(note, block.identityKey);
-		this.changed(path);
-	}
-
-	setToolbarPinned(path: string, block: VariantBlock, pinned: boolean): void {
-		const note = this.getNote(path, true) as PersistedNoteState;
-		const state = ensureBlockState(note, block.identityKey);
-		state.toolbarPinned = pinned || undefined;
-		pruneBlockState(note, block.identityKey);
-		this.changed(path);
-	}
-
-	setBlockInactiveBehavior(
-		path: string,
-		block: VariantBlock,
-		behavior: InactiveBehavior | undefined,
-	): void {
-		const note = this.getNote(path, true) as PersistedNoteState;
-		const state = ensureBlockState(note, block.identityKey);
-		state.inactiveBehavior = behavior;
-		pruneBlockState(note, block.identityKey);
-		this.changed(path);
+		this.changed({ scope: 'block', path, blockKey: block.identityKey });
 	}
 
 	setStickyVisible(path: string, visible: boolean): void {
 		const note = this.getNote(path, true) as PersistedNoteState;
 		note.stickyVisible = visible;
-		this.changed(path);
-	}
-
-	setNoteInactiveBehavior(
-		path: string,
-		behavior: InactiveBehavior | undefined,
-	): void {
-		const note = this.getNote(path, true) as PersistedNoteState;
-		note.inactiveBehavior = behavior;
-		this.changed(path);
+		this.changed({ scope: 'note', path });
 	}
 
 	isStickyVisible(path: string): boolean {
@@ -190,19 +167,88 @@ export class StateStore {
 		const key = sessionKey(path, block.identityKey);
 		if (label) this.editingVariants.set(key, label);
 		else this.editingVariants.delete(key);
-		this.emit(path);
+		this.emit({ scope: 'block', path, blockKey: block.identityKey });
 	}
 
 	getEditingVariant(path: string, block: VariantBlock): string | undefined {
 		return this.editingVariants.get(sessionKey(path, block.identityKey));
 	}
 
-	resetBlock(path: string, block: VariantBlock): void {
+	rekeyBlockState(
+		path: string,
+		before: VariantBlock,
+		after: VariantBlock,
+	): void {
+		this.rekeyBlockStateInternal(path, before.identityKey, after.identityKey);
+		this.changed({ scope: 'note', path });
+	}
+
+	migrateRenamedLabels(
+		path: string,
+		mappings: ReadonlyArray<{ before: VariantBlock; after: VariantBlock }>,
+		oldLabel: string,
+		newLabel: string,
+		acrossNote: boolean,
+	): void {
 		const note = this.getNote(path);
-		if (note) delete note.blocks[block.identityKey];
+		const oldNormalized = normalizeLabel(oldLabel);
+		const newNormalized = normalizeLabel(newLabel);
+		const migrateGlobal =
+			acrossNote &&
+			note?.globalLabel !== undefined &&
+			normalizeLabel(note.globalLabel) === oldNormalized;
+
+		for (const { before, after } of mappings) {
+			const priorSelected = note
+				? resolveBlockState(before, note, this.settings).selectedLabel
+				: undefined;
+			this.rekeyBlockStateInternal(
+				path,
+				before.identityKey,
+				after.identityKey,
+			);
+			const state = note?.blocks[after.identityKey];
+			if (state?.selectedLabel && normalizeLabel(state.selectedLabel) === oldNormalized) {
+				state.selectedLabel = newLabel;
+			} else if (
+				state?.labelMode !== 'authored' &&
+				!migrateGlobal &&
+				priorSelected &&
+				normalizeLabel(priorSelected) === oldNormalized
+			) {
+				ensureBlockState(note as PersistedNoteState, after.identityKey).selectedLabel =
+					newLabel;
+			}
+			if (state?.savedHiddenLabels) {
+				state.savedHiddenLabels = replaceNormalizedLabel(
+					state.savedHiddenLabels,
+					oldNormalized,
+					newNormalized,
+				);
+			}
+			const key = sessionKey(path, after.identityKey);
+			const hidden = this.sessionHidden.get(key);
+			if (hidden?.delete(oldNormalized)) hidden.add(newNormalized);
+			const editing = this.editingVariants.get(key);
+			if (editing && normalizeLabel(editing) === oldNormalized) {
+				this.editingVariants.set(key, newLabel);
+			}
+		}
+		if (migrateGlobal && note) note.globalLabel = newLabel;
+		this.changed({ scope: 'note', path });
+	}
+
+	resetBlock(path: string, block: VariantBlock): void {
+		const note = this.getNote(path, true) as PersistedNoteState;
+		const state = ensureBlockState(note, block.identityKey);
+		delete state.selectedLabel;
+		delete state.view;
+		delete state.savedHiddenLabels;
+		state.labelMode = 'authored';
+		state.viewMode = 'authored';
 		this.sessionHidden.delete(sessionKey(path, block.identityKey));
 		this.editingVariants.delete(sessionKey(path, block.identityKey));
-		this.changed(path);
+		this.changed({ scope: 'block', path, blockKey: block.identityKey });
 	}
 
 	resetNote(path: string): void {
@@ -213,7 +259,7 @@ export class StateStore {
 		for (const key of [...this.editingVariants.keys()]) {
 			if (key.startsWith(`${path}\u0000`)) this.editingVariants.delete(key);
 		}
-		this.changed(path);
+		this.changed({ scope: 'note', path });
 	}
 
 	renameNote(oldPath: string, newPath: string): void {
@@ -222,7 +268,7 @@ export class StateStore {
 		this.data.notes[newPath] = note;
 		delete this.data.notes[oldPath];
 		this.moveSessionKeys(oldPath, newPath);
-		this.changed(newPath);
+		this.changed({ scope: 'note', path: newPath });
 	}
 
 	/**
@@ -241,14 +287,14 @@ export class StateStore {
 			delete this.data.notes[path];
 			this.moveSessionKeys(path, moved);
 		}
-		this.changed();
+		this.changed({ scope: 'settings' });
 	}
 
 	deleteNote(path: string): void {
 		if (!this.data.notes[path]) return;
 		delete this.data.notes[path];
 		this.clearSessionKeys(path);
-		this.changed();
+		this.changed({ scope: 'settings' });
 	}
 
 	/** Drop state for every note inside a deleted folder. */
@@ -259,7 +305,7 @@ export class StateStore {
 			delete this.data.notes[notePath];
 			this.clearSessionKeys(notePath);
 		}
-		this.changed();
+		this.changed({ scope: 'settings' });
 	}
 
 	/**
@@ -275,7 +321,7 @@ export class StateStore {
 			this.clearSessionKeys(path);
 			removed += 1;
 		}
-		if (removed > 0) this.changed();
+		if (removed > 0) this.changed({ scope: 'settings' });
 		return removed;
 	}
 
@@ -303,13 +349,39 @@ export class StateStore {
 		}
 	}
 
+	private recoverLegacyIdentity(path: string, block: VariantBlock): void {
+		const note = this.getNote(path);
+		if (!note || note.blocks[block.identityKey]) return;
+		const legacyKey = block.legacyIdentityKeys.find((key) => note.blocks[key]);
+		if (!legacyKey) return;
+		this.rekeyBlockStateInternal(path, legacyKey, block.identityKey);
+		this.changed({ scope: 'block', path, blockKey: block.identityKey });
+	}
+
+	private rekeyBlockStateInternal(
+		path: string,
+		oldKey: string,
+		newKey: string,
+	): void {
+		if (oldKey === newKey) return;
+		const note = this.getNote(path);
+		const oldState = note?.blocks[oldKey];
+		if (note && oldState) {
+			note.blocks[newKey] = { ...oldState, ...note.blocks[newKey] };
+			delete note.blocks[oldKey];
+		}
+		moveMapValue(this.sessionHidden, sessionKey(path, oldKey), sessionKey(path, newKey));
+		moveMapValue(
+			this.editingVariants,
+			sessionKey(path, oldKey),
+			sessionKey(path, newKey),
+		);
+	}
+
 	updateSettings(settings: SectionVariantsSettings): void {
 		this.settings = settings;
 		this.data.settings = settings;
-		this.saveDevicePreferences({
-			livePreviewInactive: settings.livePreviewInactive,
-		});
-		this.changed();
+		this.changed({ scope: 'settings' });
 	}
 
 	async flush(): Promise<void> {
@@ -321,8 +393,8 @@ export class StateStore {
 		await this.plugin.saveData(this.data);
 	}
 
-	private changed(path?: string): void {
-		this.emit(path);
+	private changed(change: StoreChange): void {
+		this.emit(change);
 		if (this.saveTimer !== undefined) window.clearTimeout(this.saveTimer);
 		this.saveTimer = window.setTimeout(() => {
 			this.saveTimer = undefined;
@@ -330,33 +402,21 @@ export class StateStore {
 		}, 250);
 	}
 
-	private emit(path?: string): void {
-		for (const listener of this.listeners) listener(path);
+	private emit(change: StoreChange): void {
+		for (const listener of this.listeners) listener(change);
 	}
 
-	private loadDevicePreferences(): DevicePreferences {
+	private removeRetiredDevicePreferences(): void {
 		try {
-			const raw = window.localStorage.getItem(this.deviceStorageKey());
-			return raw ? (JSON.parse(raw) as DevicePreferences) : {};
-		} catch {
-			return {};
-		}
-	}
-
-	private saveDevicePreferences(preferences: DevicePreferences): void {
-		try {
-			window.localStorage.setItem(
-				this.deviceStorageKey(),
-				JSON.stringify(preferences),
+			window.localStorage.removeItem(
+				`section-variants:device:${this.data.vaultToken}`,
 			);
 		} catch {
-			// Device-local preferences are optional; data.json remains authoritative.
+			// Storage can be unavailable in restricted webviews; the retired value
+			// is harmless because no runtime code reads it anymore.
 		}
 	}
 
-	private deviceStorageKey(): string {
-		return `section-variants:device:${this.data.vaultToken}`;
-	}
 }
 
 interface MigrationResult {
@@ -369,11 +429,11 @@ interface MigrationResult {
  * `backup` rather than discarded, and the user is told. Previously any
  * unrecognised `version` silently wiped every saved selection.
  */
-function migrateData(loaded: Partial<StoredData> | null): MigrationResult {
+export function migrateData(loaded: unknown): MigrationResult {
 	const created = createStoredData();
-	if (!loaded) return { data: created };
+	if (!isRecord(loaded)) return { data: created };
 
-	if (loaded.version !== 1) {
+	if (loaded.version !== 1 && loaded.version !== 2 && loaded.version !== 3) {
 		return {
 			data: { ...created, backup: loaded },
 			warning:
@@ -383,10 +443,13 @@ function migrateData(loaded: Partial<StoredData> | null): MigrationResult {
 
 	return {
 		data: {
-			version: 1,
-			vaultToken: loaded.vaultToken ?? created.vaultToken,
-			settings: { ...DEFAULT_SETTINGS, ...loaded.settings },
-			notes: loaded.notes ?? {},
+			version: 3,
+			vaultToken:
+				typeof loaded.vaultToken === 'string'
+					? loaded.vaultToken
+					: created.vaultToken,
+			settings: migrateSettings(loaded.settings),
+			notes: migrateNotes(loaded.notes),
 			...(loaded.backup === undefined ? {} : { backup: loaded.backup }),
 		},
 	};
@@ -394,11 +457,95 @@ function migrateData(loaded: Partial<StoredData> | null): MigrationResult {
 
 function createStoredData(): StoredData {
 	return {
-		version: 1,
+		version: 3,
 		vaultToken: randomToken(),
 		settings: { ...DEFAULT_SETTINGS },
 		notes: {},
 	};
+}
+
+function migrateSettings(value: unknown): SectionVariantsSettings {
+	if (!isRecord(value)) return { ...DEFAULT_SETTINGS };
+	return {
+		defaultView: isViewMode(value.defaultView)
+			? value.defaultView
+			: DEFAULT_SETTINGS.defaultView,
+		defaultMinWidth:
+			typeof value.defaultMinWidth === 'string'
+				? value.defaultMinWidth
+				: DEFAULT_SETTINGS.defaultMinWidth,
+		responsiveBehavior: isResponsiveMode(value.responsiveBehavior)
+			? value.responsiveBehavior
+			: DEFAULT_SETTINGS.responsiveBehavior,
+		stickyControlEnabled:
+			typeof value.stickyControlEnabled === 'boolean'
+				? value.stickyControlEnabled
+				: DEFAULT_SETTINGS.stickyControlEnabled,
+		automaticBlockIds:
+			typeof value.automaticBlockIds === 'boolean'
+				? value.automaticBlockIds
+				: DEFAULT_SETTINGS.automaticBlockIds,
+		aliases: Array.isArray(value.aliases)
+			? value.aliases.filter((alias): alias is string => typeof alias === 'string')
+			: [...DEFAULT_SETTINGS.aliases],
+		exportState:
+			value.exportState === 'current' || value.exportState === 'authored'
+				? value.exportState
+				: DEFAULT_SETTINGS.exportState,
+		showIndicators:
+			typeof value.showIndicators === 'boolean'
+				? value.showIndicators
+				: DEFAULT_SETTINGS.showIndicators,
+	};
+}
+
+function migrateNotes(value: unknown): Record<string, PersistedNoteState> {
+	if (!isRecord(value)) return {};
+	const notes: Record<string, PersistedNoteState> = {};
+	for (const [path, rawNote] of Object.entries(value)) {
+		if (!isRecord(rawNote)) continue;
+		const note = createNoteState();
+		if (typeof rawNote.globalLabel === 'string') {
+			note.globalLabel = rawNote.globalLabel;
+		}
+		if (isViewMode(rawNote.globalView)) note.globalView = rawNote.globalView;
+		if (typeof rawNote.stickyVisible === 'boolean') {
+			note.stickyVisible = rawNote.stickyVisible;
+		}
+		if (isRecord(rawNote.blocks)) {
+			for (const [identity, rawBlock] of Object.entries(rawNote.blocks)) {
+				if (!isRecord(rawBlock)) continue;
+				const block = ensureBlockState(note, identity);
+				if (typeof rawBlock.selectedLabel === 'string') {
+					block.selectedLabel = rawBlock.selectedLabel;
+				}
+				if (isViewMode(rawBlock.view)) block.view = rawBlock.view;
+				if (rawBlock.labelMode === 'authored') block.labelMode = 'authored';
+				if (rawBlock.viewMode === 'authored') block.viewMode = 'authored';
+				if (Array.isArray(rawBlock.savedHiddenLabels)) {
+					const labels = rawBlock.savedHiddenLabels.filter(
+						(label): label is string => typeof label === 'string',
+					);
+					if (labels.length > 0) block.savedHiddenLabels = labels;
+				}
+				pruneBlockState(note, identity);
+			}
+		}
+		notes[path] = note;
+	}
+	return notes;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isViewMode(value: unknown): value is ViewMode {
+	return value === 'toggle' || value === 'columns' || value === 'auto';
+}
+
+function isResponsiveMode(value: unknown): value is ResponsiveMode {
+	return value === 'responsive' || value === 'stack' || value === 'scroll';
 }
 
 function randomToken(): string {
@@ -409,4 +556,21 @@ function randomToken(): string {
 
 function sessionKey(path: string, identityKey: string): string {
 	return `${path}\u0000${identityKey}`;
+}
+
+function replaceNormalizedLabel(
+	labels: readonly string[],
+	oldLabel: string,
+	newLabel: string,
+): string[] {
+	return [...new Set(labels.map((label) =>
+		normalizeLabel(label) === oldLabel ? newLabel : normalizeLabel(label),
+	))];
+}
+
+function moveMapValue<T>(map: Map<string, T>, oldKey: string, newKey: string): void {
+	if (oldKey === newKey || !map.has(oldKey)) return;
+	const value = map.get(oldKey) as T;
+	map.delete(oldKey);
+	if (!map.has(newKey)) map.set(newKey, value);
 }

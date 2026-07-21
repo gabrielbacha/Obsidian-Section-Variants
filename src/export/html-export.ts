@@ -7,17 +7,14 @@ import {
 	TFile,
 } from 'obsidian';
 import {
-	effectiveAuthoredLabel,
-	effectiveAuthoredView,
-	normalizeLabel,
 	ParsedNote,
 	VariantBlock,
 	VariantSection,
 } from '../core/types';
 import { defaultHtmlExportPath } from '../core/serializer';
 import { SectionVariantsHost } from '../plugin-host';
+import { ExportState, selectExportVariants } from './selection';
 
-type ExportState = 'authored' | 'current';
 
 export class HtmlExportModal extends Modal {
 	private outputPath: string;
@@ -167,25 +164,18 @@ async function renderExportBlock(
 	component: Component,
 	stateMode: ExportState,
 ): Promise<void> {
-	const authoredView = effectiveAuthoredView(block, host.store.settings.defaultView);
 	const current = host.store.resolve(path, block);
-	const view = stateMode === 'authored' ? authoredView : current.view;
-	const selected =
-		stateMode === 'authored' ? effectiveAuthoredLabel(block) : current.selectedLabel;
+	const selection = selectExportVariants(
+		block,
+		current,
+		stateMode,
+		host.store.settings.defaultView,
+	);
+	const view = selection.view;
 	const wrapper = target.createDiv({
 		cls: `section-variants-export-block section-variants-export-${view}`,
 	});
-	const variants =
-		view === 'toggle'
-			? block.variants.filter(
-					(variant) => variant.normalizedLabel === normalizeLabel(selected),
-				)
-			: block.variants.filter(
-					(variant) =>
-						stateMode === 'authored' ||
-						!current.hiddenLabels.has(variant.normalizedLabel),
-				);
-	for (const variant of variants) {
+	for (const variant of selection.variants) {
 		const panel = wrapper.createEl('section');
 		panel.createEl('h2', { text: variant.label });
 		await renderVariant(host, path, source, variant, panel, component, stateMode);
@@ -244,7 +234,7 @@ async function uniqueHtmlPath(
 	requested: string,
 ): Promise<string> {
 	const normalized = normalizePath(
-		requested.toLocaleLowerCase().endsWith('.html') ? requested : `${requested}.html`,
+		requested.toLowerCase().endsWith('.html') ? requested : `${requested}.html`,
 	);
 	if (!host.app.vault.getAbstractFileByPath(normalized)) return normalized;
 	const stem = normalized.replace(/\.html$/iu, '');

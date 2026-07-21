@@ -1,9 +1,11 @@
 import {
 	EditorState,
 	Extension,
+	Prec,
 	Range,
 	StateEffect,
 	StateField,
+	Transaction,
 } from '@codemirror/state';
 import {
 	Decoration,
@@ -19,12 +21,24 @@ import {
 	editorInfoField,
 	editorLivePreviewField,
 	MarkdownRenderer,
+	Notice,
 } from 'obsidian';
 import { normalizeLabel, VariantBlock, VariantSection } from '../core/types';
 import { SectionVariantsHost } from '../plugin-host';
 import { VariantBlockRenderer } from '../ui/block-renderer';
+import { blockMarkerTooltip, openBlockMenu } from '../ui/block-menu';
 import { createSegmentedControl } from '../ui/segmented-control';
 import { hasRoomForColumns, resolveLengthPx } from '../ui/css-length';
+import { createVariantMarker } from '../ui/variant-marker';
+import {
+	changesAreWithinEditableSpans,
+	DocumentChange,
+	EditableSpan,
+	editableSpansForVariant,
+} from './edit-boundaries';
+import { blockSpan, fenceLineRange } from './ranges';
+import { dispatchAndRestoreFocus, isNoteWideSelection } from './interactions';
+import { widgetPositionIdentity } from './widget-identity';
 
 const refreshEffect = StateEffect.define<void>();
 const refreshField = StateField.define<number>({
@@ -65,7 +79,11 @@ export function refreshLivePreviewEditors(path?: string): void {
 export function createLivePreviewExtension(
 	host: SectionVariantsHost,
 ): Extension {
-	const decorationsField = StateField.define<DecorationSet>({
+	interface VariantDecorations {
+		deco: DecorationSet;
+		atomic: DecorationSet;
+	}
+	const decorationsField = StateField.define<VariantDecorations>({
 		create(state) {
 			return buildDecorations(host, state);
 		},
@@ -87,7 +105,12 @@ export function createLivePreviewExtension(
 			}
 			return decorations;
 		},
-		provide: (field) => EditorView.decorations.from(field),
+		provide: (field) => [
+			EditorView.decorations.from(field, (value) => value.deco),
+			EditorView.atomicRanges.of(
+				(view) => view.state.field(field, false)?.atomic ?? Decoration.none,
+			),
+		],
 	});
 
 	class SectionVariantsViewPlugin implements PluginValue {
@@ -132,9 +155,37 @@ export function createLivePreviewExtension(
 	return [
 		refreshField,
 		editorWidthField,
+		EditorState.changeFilter.of((transaction) => {
+			if (!transaction.docChanged) return true;
+			// Vault/process updates and plugin mutations are unannotated and may
+			// intentionally change structure. Guard only editor-originated input,
+			// deletion, history, completion, paste, cut, and drop transactions.
+			if (transaction.annotation(Transaction.userEvent) === undefined) {
+				return true;
+			}
+			if (!transaction.startState.field(editorLivePreviewField, false)) {
+				return true;
+			}
+			const info = transaction.startState.field(editorInfoField, false);
+			const path = info?.file?.path;
+			if (!path) return true;
+			const parsed = host.parse(transaction.startState.doc.toString());
+			const spans = collectEditableSpans(
+				host,
+				transaction.startState.field(editorWidthField),
+				path,
+				parsed.source,
+				parsed.roots,
+			);
+			const changes: DocumentChange[] = [];
+			transaction.changes.iterChanges((from, to, _fromNew, _toNew, inserted) => {
+				changes.push({ from, to, inserted: inserted.toString() });
+			});
+			return changesAreWithinEditableSpans(parsed, spans, changes);
+		}),
 		decorationsField,
 		ViewPlugin.fromClass(SectionVariantsViewPlugin),
-		keymap.of([
+		Prec.high(keymap.of([
 			{
 				key: 'Escape',
 				run(view) {
@@ -151,40 +202,98 @@ export function createLivePreviewExtension(
 					return true;
 				},
 			},
-		]),
+		])),
 	];
+}
+
+function collectEditableSpans(
+	host: SectionVariantsHost,
+	editorWidth: number,
+	path: string,
+	source: string,
+	blocks: readonly VariantBlock[],
+): EditableSpan[] {
+	const spans: EditableSpan[] = [];
+	for (const block of blocks) {
+		if (!block.valid || !block.closing) continue;
+		const state = host.store.resolve(path, block);
+		const autoColumns =
+			state.view === 'auto' &&
+			hasRoomForColumns(
+				editorWidth,
+				resolveLengthPx(state.minWidth, activeDocument.body),
+				block.variants.length,
+			);
+		const mode =
+			state.view === 'auto'
+				? autoColumns
+					? 'columns'
+					: 'toggle'
+				: state.view;
+		const editingLabel = host.store.getEditingVariant(path, block);
+		if (mode === 'columns' && !editingLabel) continue;
+		const activeLabel = editingLabel ?? state.selectedLabel;
+		const active = block.variants.find(
+			(variant) =>
+				variant.normalizedLabel === normalizeLabel(activeLabel),
+		);
+		if (!active?.closing) continue;
+		spans.push(...editableSpansForVariant(active, source));
+		spans.push(
+			...collectEditableSpans(
+				host,
+				editorWidth,
+				path,
+				source,
+				active.children,
+			),
+		);
+	}
+	return spans;
 }
 
 function buildDecorations(
 	host: SectionVariantsHost,
 	state: EditorState,
-): DecorationSet {
+): { deco: DecorationSet; atomic: DecorationSet } {
 	const livePreview = state.field(editorLivePreviewField, false);
-	if (!livePreview) return Decoration.none;
+	if (!livePreview) return { deco: Decoration.none, atomic: Decoration.none };
 	const info = state.field(editorInfoField, false);
 	const path = info?.file?.path;
-	if (!path) return Decoration.none;
+	if (!path) return { deco: Decoration.none, atomic: Decoration.none };
 	const source = state.doc.toString();
 	const editorWidth = state.field(editorWidthField);
 	const parsed = host.parse(source);
 	const ranges: Range<Decoration>[] = [];
+	const atomicRanges: Range<Decoration>[] = [];
 	for (const block of parsed.roots) {
 		if (!block.valid || !block.closing) continue;
-		decorateBlock(host, editorWidth, path, source, block, ranges);
+		decorateBlock(
+			host,
+			state.doc,
+			editorWidth,
+			path,
+			source,
+			block,
+			ranges,
+			atomicRanges,
+		);
 	}
-	return Decoration.set(
-		ranges.sort((left, right) => left.from - right.from || left.to - right.to),
-		true,
-	);
+	return {
+		deco: Decoration.set(ranges, true),
+		atomic: Decoration.set(atomicRanges, true),
+	};
 }
 
 function decorateBlock(
 	host: SectionVariantsHost,
+	doc: EditorState['doc'],
 	editorWidth: number,
 	path: string,
 	source: string,
 	block: VariantBlock,
 	ranges: Range<Decoration>[],
+	atomicRanges: Range<Decoration>[],
 ): void {
 	if (!block.closing) return;
 	const state = host.store.resolve(path, block);
@@ -205,15 +314,17 @@ function decorateBlock(
 	const editingLabel = host.store.getEditingVariant(path, block);
 
 	if (mode === 'columns' && !editingLabel) {
+		const span = blockSpan(doc, block.opening.from, block.closing.from);
 		ranges.push(
 			Decoration.replace({
 				block: true,
 				widget: new LiveBlockWidget(host, path, source, block, 'columns'),
-			}).range(block.opening.from, block.closing.to),
+			}).range(span.from, span.to),
 		);
 		return;
 	}
 
+	const openingSpan = blockSpan(doc, block.opening.from, block.opening.from);
 	ranges.push(
 		Decoration.replace({
 			block: true,
@@ -224,80 +335,72 @@ function decorateBlock(
 				block,
 				editingLabel ? 'editing-columns' : 'toolbar',
 			),
-		}).range(block.opening.from, block.opening.to),
+		}).range(openingSpan.from, openingSpan.to),
 	);
-	ranges.push(hiddenRange(block.closing.from, block.closing.to));
+	hideFence(doc, block.closing.from, ranges, atomicRanges);
 
 	const activeLabel = editingLabel ?? state.selectedLabel;
 	for (const variant of block.variants) {
 		if (!variant.closing) continue;
 		const active = variant.normalizedLabel === normalizeLabel(activeLabel);
 		if (!active) {
-			const widget =
-				mode === 'toggle' && state.inactiveBehavior === 'collapsed'
-					? new InactiveVariantWidget(host, path, block, variant)
-					: undefined;
-			ranges.push(
-				Decoration.replace({ block: true, widget }).range(
-					variant.opening.from,
-					variant.closing.to,
-				),
-			);
+			const span = blockSpan(doc, variant.opening.from, variant.closing.from);
+			const decoration = Decoration.replace({ block: true });
+			ranges.push(decoration.range(span.from, span.to));
+			atomicRanges.push(decoration.range(span.from, span.to));
 			continue;
 		}
-		ranges.push(hiddenRange(variant.opening.from, variant.opening.to));
-		ranges.push(hiddenRange(variant.closing.from, variant.closing.to));
+		hideFence(doc, variant.opening.from, ranges, atomicRanges);
+		hideFence(doc, variant.closing.from, ranges, atomicRanges);
+		addLivePreviewBorder(source, variant, ranges);
 		for (const child of variant.children) {
-			decorateBlock(host, editorWidth, path, source, child, ranges);
+			decorateBlock(
+				host,
+				doc,
+				editorWidth,
+				path,
+				source,
+				child,
+				ranges,
+				atomicRanges,
+			);
 		}
 	}
 }
 
-function hiddenRange(from: number, to: number): Range<Decoration> {
-	return Decoration.replace({}).range(from, to);
+function hideFence(
+	doc: EditorState['doc'],
+	from: number,
+	ranges: Range<Decoration>[],
+	atomicRanges: Range<Decoration>[],
+): void {
+	const span = fenceLineRange(doc, from);
+	if (span.to <= span.from) return;
+	const decoration = Decoration.replace({});
+	ranges.push(decoration.range(span.from, span.to));
+	atomicRanges.push(decoration.range(span.from, span.to));
 }
 
-class InactiveVariantWidget extends WidgetType {
-	private readonly signature: string;
-
-	constructor(
-		private readonly host: SectionVariantsHost,
-		private readonly path: string,
-		private readonly block: VariantBlock,
-		private readonly variant: VariantSection,
-	) {
-		super();
-		this.signature = `${path}\u0000${block.identityKey}\u0000${variant.normalizedLabel}`;
+function addLivePreviewBorder(
+	source: string,
+	variant: VariantSection,
+	ranges: Range<Decoration>[],
+): void {
+	if (variant.content.from >= variant.content.to) return;
+	const lineStarts = [variant.content.from];
+	for (let offset = variant.content.from; offset < variant.content.to - 1; offset += 1) {
+		if (source.charCodeAt(offset) === 10) lineStarts.push(offset + 1);
 	}
-
-	eq(other: InactiveVariantWidget): boolean {
-		return other.signature === this.signature;
-	}
-
-	toDOM(view: EditorView): HTMLElement {
-		const button = createEl('button');
-		button.type = 'button';
-		button.addClass('section-variants-inactive-placeholder');
-		button.setText(`${this.variant.label} — collapsed`);
-		button.addEventListener('click', () => {
-			void this.select(view);
-		});
-		return button;
-	}
-
-	ignoreEvent(): boolean {
-		return false;
-	}
-
-	private async select(view: EditorView): Promise<void> {
-		if (!(await this.host.ensurePersistentIdentity(this.path, this.block))) return;
-		this.host.store.setSelectedLabel(this.path, this.block, this.variant.label);
-		view.dispatch({
-			effects: refreshEffect.of(),
-			selection: { anchor: this.variant.content.from },
-		});
-		view.focus();
-	}
+	lineStarts.forEach((lineStart, index) => {
+		const classes = ['section-variants-live-border-line'];
+		if (index === 0) classes.push('is-start');
+		if (index === lineStarts.length - 1) classes.push('is-end');
+		ranges.push(
+			Decoration.line({ attributes: { class: classes.join(' ') } }).range(
+				lineStart,
+			),
+		);
+	});
 }
 
 type LiveWidgetMode = 'toolbar' | 'columns' | 'editing-columns';
@@ -323,6 +426,7 @@ class LiveBlockWidget extends WidgetType {
 		this.signature = [
 			path,
 			block.identityKey,
+			widgetPositionIdentity(block),
 			mode,
 			state.selectedLabel,
 			state.view,
@@ -344,7 +448,11 @@ class LiveBlockWidget extends WidgetType {
 
 	toDOM(view: EditorView): HTMLElement {
 		const root = createDiv();
-		root.addClass('section-variants-root', 'section-variants-live-widget');
+		root.addClass(
+			'section-variants-root',
+			'section-variants-live-widget',
+			`section-variants-live-${this.mode}`,
+		);
 		if (this.mode === 'toolbar') {
 			this.renderToolbar(root, view, false);
 			return root;
@@ -410,47 +518,58 @@ class LiveBlockWidget extends WidgetType {
 		toolbar.setAttribute('role', 'toolbar');
 		toolbar.setAttribute('aria-label', 'Section variants in live preview');
 		const state = this.host.store.resolve(this.path, this.block);
+		const finishEditing = (): void => {
+			this.host.store.setEditingVariant(this.path, this.block);
+			dispatchAndRestoreFocus(view, { effects: refreshEffect.of() });
+		};
+		createVariantMarker(toolbar, {
+			ariaLabel: 'Open variants menu',
+			tooltip: blockMarkerTooltip(this.host, this.path, this.block),
+			differs:
+				state.differsFromAuthored && this.host.store.settings.showIndicators,
+			onClick: (event) =>
+				openBlockMenu(this.host, this.path, this.block, event, {
+					...(showDone ? { onDoneEditing: finishEditing } : {}),
+				}),
+		});
 		const active = this.block.variants.find(
 			(variant) => variant.normalizedLabel === normalizeLabel(state.selectedLabel),
 		);
 		createSegmentedControl(toolbar, {
 			cls: 'section-variants-labels',
 			ariaLabel: 'Variant',
-			emphasized: true,
 			value: active?.label,
 			options: this.block.variants.map((variant) => ({
 				value: variant.label,
 				text: variant.label,
 				label: variant.label,
 			})),
-			onSelect: (label) => void this.selectVariant(view, label),
+			onSelect: (label, event) => {
+				if (isNoteWideSelection(event)) {
+					const parsed = this.host.parse(view.state.doc.toString());
+					const result = this.host.store.applyLabelAcrossNote(
+						this.path,
+						parsed,
+						label,
+					);
+					new Notice(
+						`Applied to ${result.applied} block${result.applied === 1 ? '' : 's'}, skipped ${result.skipped}.`,
+					);
+				} else {
+					void this.selectVariant(view, label);
+				}
+			},
 		});
-		if (showDone) {
-			const done = toolbar.createEl('button', {
-				type: 'button',
-				cls: 'section-variants-done-editing',
-				text: 'Done editing',
-			});
-			done.addEventListener('click', () => {
-				this.host.store.setEditingVariant(this.path, this.block);
-				view.dispatch({ effects: refreshEffect.of() });
-				view.focus();
-			});
-		}
-		const mode = toolbar.createSpan({
-			cls: 'section-variants-live-mode',
-			text: state.view === 'auto' ? 'Auto' : capitalize(state.view),
-		});
-		mode.setAttribute('aria-label', `Current view: ${state.view}`);
 	}
 
 	private async editVariant(
 		view: EditorView,
 		variant: VariantSection,
 	): Promise<void> {
-		if (!(await this.host.ensurePersistentIdentity(this.path, this.block))) return;
-		this.host.store.setEditingVariant(this.path, this.block, variant.label);
-		this.host.store.setSelectedLabel(this.path, this.block, variant.label);
+		const persistent = await this.host.ensurePersistentIdentity(this.path, this.block);
+		if (!persistent) return;
+		this.host.store.setEditingVariant(this.path, persistent, variant.label);
+		this.host.store.setSelectedLabel(this.path, persistent, variant.label);
 		view.dispatch({
 			effects: refreshEffect.of(),
 			selection: { anchor: variant.content.from },
@@ -462,8 +581,9 @@ class LiveBlockWidget extends WidgetType {
 		view: EditorView,
 		label: string,
 	): Promise<void> {
-		if (!(await this.host.ensurePersistentIdentity(this.path, this.block))) return;
-		this.host.store.setSelectedLabel(this.path, this.block, label);
+		const persistent = await this.host.ensurePersistentIdentity(this.path, this.block);
+		if (!persistent) return;
+		this.host.store.setSelectedLabel(this.path, persistent, label);
 		view.dispatch({ effects: refreshEffect.of() });
 	}
 }
@@ -504,8 +624,4 @@ async function renderVariantPreview(
 			component,
 		);
 	}
-}
-
-function capitalize(value: string): string {
-	return value.charAt(0).toUpperCase() + value.slice(1);
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseNote } from './parser';
+import { normalizeLabel } from './types';
 
 describe('parseNote', () => {
 	it('parses shorthand and explicit variants', () => {
@@ -154,5 +155,10 @@ describe('parseNote', () => {
 		expect(block?.valid).toBe(false);
 		expect(block?.range.to).toBe(source.length);
 		expect(block?.diagnostics.some((item) => item.code === 'missing-closing-fence')).toBe(true);
+	});
+
+	it('normalizes labels deterministically without locale-sensitive casing', () => {
+		expect(normalizeLabel('  I  ')).toBe('i');
+		expect(normalizeLabel('İ')).toBe('i̇');
 	});
 });

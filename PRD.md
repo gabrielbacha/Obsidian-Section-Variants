@@ -202,35 +202,35 @@ The default is `responsive`.
 
 ## 8. Per-block controls
 
-Each rendered block has a compact toolbar:
+Each valid rendered block has a quiet border and a compact layers marker. Hovering or focusing the block reveals only its variant labels:
 
 ```text
-A | B | C    Toggle / Columns / Auto    ⋯
+                    A | B | C    ◉
 ```
 
 Behavior:
 
 - clicking a label changes that block
 - `Shift + click` applies the label to every matching block in the note
-- the overflow menu exposes:
-  - apply to this block
-  - apply to all matching blocks
+- the marker menu exposes:
+  - toggle, columns, and auto view modes
   - follow global state
   - reset this block
-  - set default view
-  - configure widths
-  - configure responsive behavior
-  - pin toolbar
+  - authored-default configuration
+  - variant renaming
+  - column visibility persistence
+  - stable-ID creation when needed
 
-The toolbar:
+The controls:
 
-- appears on hover in Reading View
-- remains visible while editing in Live Preview
-- may be pinned per block
+- leave only the layers marker visible at rest
+- reveal labels on hover or keyboard focus on hover-capable devices
+- keep labels and 44px targets available on touch devices
+- use theme-native neutral states rather than accent-filled selection pills
 
 ## 9. Note-wide control
 
-An optional sticky control provides note-level switching.
+An optional sticky control provides note-level switching. It follows the same pattern: a small top-right layers marker at rest and note-wide labels on hover or focus.
 
 It shows the union of labels across the note, ordered by first appearance.
 
@@ -241,9 +241,9 @@ Selecting a label:
 - leaves unmatched blocks unchanged
 - reports the result, for example: `Applied to 8 blocks, skipped 2`
 
-The control also supports applying a view mode to all blocks.
+The marker menu supports applying a view mode to all blocks and hiding the note control.
 
-When compatible blocks have different active selections, it displays `Mixed`.
+When compatible blocks have different active selections, the marker uses a dashed outline and its tooltip reports `Mixed`.
 
 Global actions override current local selections but do not permanently lock blocks.
 
@@ -267,10 +267,9 @@ Plugin data stores:
 - last selected variant per block
 - last selected view per block
 - local overrides
-- temporary hidden columns
+- explicitly saved hidden columns
 - sticky-control state
-- device-specific preferences
-- Live Preview inactive-content behavior
+- per-dimension authored-following markers
 
 Clicking controls must not rewrite Markdown, except when the user has opted into automatic stable-ID creation for an ambiguous block.
 
@@ -287,6 +286,10 @@ Current UI state resolves in this order:
 
 Markdown attributes define authored defaults; they do not prevent temporary or persisted UI selections from overriding those defaults.
 
+Resetting a block sets independent authored markers for its label and view, so an existing note-wide value is ignored without copying and freezing the literal authored value. A later local choice clears only its corresponding marker. A note-wide label or view action also clears the corresponding marker on valid blocks. **Follow global state** clears both local overrides and both markers; it follows a compatible global label and any present global view, otherwise falling back to authored state for the unavailable dimension.
+
+Source mutations return old/new block identity mappings. Stable-ID creation and label rename atomically migrate persisted block state, session-hidden columns, editing state, selected labels, and affected note-wide labels before data is flushed. Label normalization is deterministic `trim().toLowerCase()`; schema migration attempts recovery of older locale-sensitive fingerprint keys when they can be reproduced.
+
 ### 10.4 Reopening notes
 
 The plugin restores the last-used state.
@@ -297,7 +300,7 @@ A command resets all blocks to authored defaults.
 
 ## 11. Default-difference indicator
 
-When current state differs from the authored default, the block shows a subtle indicator.
+When current state differs from the authored default, the marker shows a subtle dot.
 
 The sticky note control also shows an indicator when any block differs.
 
@@ -319,21 +322,26 @@ No detailed text is shown until hover or focus.
 - Toggle mode renders only the selected variant.
 - Columns mode renders all visible variants.
 - Auto mode responds to available width.
+- Fence mapping is restricted to each postprocessor section's reported source lines and requires exact text and order.
+- Pending sections are aggregated so blocks split across render chunks can mount after both boundaries arrive; later virtualized sections are processed independently.
+- Incomplete or ambiguous mappings remain fully visible with a warning.
+- Mounts, warnings, and DOM ranges are created through the rendered root's owner document for pop-out windows.
 
 ### Live Preview
 
-Inactive variants may be:
+Inactive variants are fully hidden; the label selector is the only switcher needed.
 
-- represented by compact collapsed placeholders, default
-- fully hidden
+In columns mode, Live Preview displays rendered columns. Selecting **Edit** on a column reveals that variant's source below the preview while the remaining columns stay rendered. Selecting **Done editing** from the marker menu or pressing `Escape` returns to the compact preview.
 
-This may be configured globally, per note, or per block.
+Editor transactions inside a valid rendered block must fit wholly inside one currently editable variant-content span. Nested blocks are removed from their parent's editable spans and expose only their own selected content. This makes Backspace at the opening boundary and Delete at the closing boundary no-ops, keeps typing at the bottom before the closing fence, and rejects selections, paste, cut, drop, undo, redo, or multi-cursor changes that cross a hidden fence or adjacent variant.
 
-In columns mode, Live Preview displays rendered columns. Selecting **Edit** on a column reveals that variant's source below the preview while the remaining columns stay rendered. Selecting **Done editing** or pressing `Escape` returns to the compact preview.
+Hidden fences and inactive ranges are line-aligned through CodeMirror document lines, safe for LF and CRLF, and registered as atomic ranges in addition to the transaction guard. Widget equality includes absolute block offsets so edits above a block cannot leave stale selection anchors. Escape has elevated keymap precedence, toolbar actions restore editor focus only when it was already focused, and Shift-select applies a label across valid blocks in the note.
 
 ### Source Mode
 
 All Markdown remains visible and unchanged.
+
+Fence protection is disabled in Source mode so structural editing remains possible.
 
 ## 13. Column visibility
 
@@ -355,6 +363,8 @@ Autocomplete suggests labels already used in the current note, ranked by:
 2. recent use
 
 Labels are matched case-insensitively for global actions.
+
+Global labels, views, rename-across-note actions, command availability, and result counts include valid blocks only.
 
 Display casing remains exactly as authored.
 
@@ -426,7 +436,6 @@ The plugin registers commands for:
 - Reset focused block
 - Reset all blocks to defaults
 - Toggle sticky note control
-- Toggle inactive Live Preview visibility
 
 No keyboard shortcuts are assigned by default.
 
@@ -489,7 +498,8 @@ Behavior:
 - toggle mode works normally
 - columns stack by default
 - sticky controls remain available
-- Live Preview supports collapsed or hidden inactive variants
+- inactive Live Preview variants remain hidden
+- touch controls remain visible and use 44px targets
 - custom width editing is desktop-oriented
 - horizontal scrolling is available only when explicitly forced
 
@@ -499,16 +509,14 @@ Vault-wide settings include:
 
 - default view
 - default minimum column width
-- Live Preview inactive behavior
 - responsive columns behavior
 - sticky control enabled
-- toolbar visibility
 - automatic block-ID creation
 - supported container aliases
 - export defaults
 - indicator visibility
 
-Per-note and per-block settings may override vault settings.
+Authored attributes and supported per-note or per-block state may override vault defaults.
 
 ## 23. Acceptance criteria
 
@@ -523,7 +531,7 @@ The v1 release is complete when a user can:
 7. Restore state after reopening a note.
 8. Distinguish current state from authored defaults.
 9. Reset one block or the full note.
-10. Edit content safely in Live Preview.
+10. Edit content safely in Live Preview without deleting or crossing hidden fences.
 11. Use nested variant blocks.
 12. Export deterministically.
 13. Use the plugin on Obsidian mobile.

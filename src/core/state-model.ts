@@ -1,7 +1,6 @@
 import {
 	effectiveAuthoredLabel,
 	effectiveAuthoredView,
-	InactiveBehavior,
 	normalizeLabel,
 	ParsedNote,
 	ResponsiveMode,
@@ -12,10 +11,8 @@ import {
 export interface SectionVariantsSettings {
 	defaultView: ViewMode;
 	defaultMinWidth: string;
-	livePreviewInactive: InactiveBehavior;
 	responsiveBehavior: ResponsiveMode;
 	stickyControlEnabled: boolean;
-	toolbarVisibility: 'hover' | 'always';
 	automaticBlockIds: boolean;
 	aliases: string[];
 	exportState: 'authored' | 'current';
@@ -25,10 +22,8 @@ export interface SectionVariantsSettings {
 export const DEFAULT_SETTINGS: SectionVariantsSettings = {
 	defaultView: 'toggle',
 	defaultMinWidth: '320px',
-	livePreviewInactive: 'collapsed',
 	responsiveBehavior: 'responsive',
 	stickyControlEnabled: true,
-	toolbarVisibility: 'hover',
 	automaticBlockIds: false,
 	aliases: ['variants'],
 	exportState: 'authored',
@@ -39,15 +34,14 @@ export interface PersistedBlockState {
 	selectedLabel?: string;
 	view?: ViewMode;
 	savedHiddenLabels?: string[];
-	toolbarPinned?: boolean;
-	inactiveBehavior?: InactiveBehavior;
+	labelMode?: 'authored';
+	viewMode?: 'authored';
 }
 
 export interface PersistedNoteState {
 	globalLabel?: string;
 	globalView?: ViewMode;
 	stickyVisible?: boolean;
-	inactiveBehavior?: InactiveBehavior;
 	blocks: Record<string, PersistedBlockState>;
 }
 
@@ -58,8 +52,6 @@ export interface ResolvedBlockState {
 	minWidth: string;
 	widths?: string;
 	hiddenLabels: Set<string>;
-	toolbarPinned: boolean;
-	inactiveBehavior: InactiveBehavior;
 	differsFromAuthored: boolean;
 }
 
@@ -77,10 +69,15 @@ export function resolveBlockState(
 	const authoredLabel = effectiveAuthoredLabel(block);
 	const selectedLabel =
 		findAuthoredLabel(block, persisted?.selectedLabel) ??
-		findAuthoredLabel(block, note?.globalLabel) ??
+		(persisted?.labelMode === 'authored'
+			? authoredLabel
+			: findAuthoredLabel(block, note?.globalLabel)) ??
 		authoredLabel;
 	const authoredView = effectiveAuthoredView(block, settings.defaultView);
-	const view = persisted?.view ?? note?.globalView ?? authoredView;
+	const view =
+		persisted?.view ??
+		(persisted?.viewMode === 'authored' ? authoredView : note?.globalView) ??
+		authoredView;
 	const hiddenLabels = new Set(
 		[...(sessionHiddenLabels ?? persisted?.savedHiddenLabels ?? [])].map(
 			normalizeLabel,
@@ -93,11 +90,6 @@ export function resolveBlockState(
 		minWidth: block.attributes.minWidth ?? settings.defaultMinWidth,
 		widths: block.attributes.widths,
 		hiddenLabels,
-		toolbarPinned: persisted?.toolbarPinned ?? false,
-		inactiveBehavior:
-			persisted?.inactiveBehavior ??
-			note?.inactiveBehavior ??
-			settings.livePreviewInactive,
 		differsFromAuthored:
 			normalizeLabel(selectedLabel) !== normalizeLabel(authoredLabel) ||
 			view !== authoredView,
@@ -111,7 +103,7 @@ export function applyGlobalLabel(
 	label: string,
 ): { applied: number; skipped: number } {
 	const before = new Map(
-		parsed.blocks.map((block) => [
+		parsed.blocks.filter((block) => block.valid).map((block) => [
 			block.identityKey,
 			resolveBlockState(block, note, settings).selectedLabel,
 		]),
@@ -120,11 +112,12 @@ export function applyGlobalLabel(
 	note.globalLabel = label;
 	let applied = 0;
 	let skipped = 0;
-	for (const block of parsed.blocks) {
+	for (const block of parsed.blocks.filter((candidate) => candidate.valid)) {
 		const matches = block.variants.some(
 			(variant) => variant.normalizedLabel === normalized,
 		);
 		const persisted = ensureBlockState(note, block.identityKey);
+		delete persisted.labelMode;
 		if (matches) {
 			delete persisted.selectedLabel;
 			applied += 1;
@@ -147,10 +140,11 @@ export function applyGlobalView(
 	view: ViewMode,
 ): void {
 	note.globalView = view;
-	for (const block of parsed.blocks) {
+	for (const block of parsed.blocks.filter((candidate) => candidate.valid)) {
 		const state = note.blocks[block.identityKey];
 		if (!state) continue;
 		delete state.view;
+		delete state.viewMode;
 		pruneBlockState(note, block.identityKey);
 	}
 }
@@ -173,8 +167,8 @@ export function pruneBlockState(
 		state.selectedLabel === undefined &&
 		state.view === undefined &&
 		state.savedHiddenLabels === undefined &&
-		state.toolbarPinned === undefined &&
-		state.inactiveBehavior === undefined
+		state.labelMode === undefined &&
+		state.viewMode === undefined
 	) {
 		delete note.blocks[identityKey];
 	}

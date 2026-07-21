@@ -2,10 +2,8 @@ import {
 	Component,
 	MarkdownRenderChild,
 	MarkdownRenderer,
-	Menu,
 	Notice,
 	setIcon,
-	setTooltip,
 } from 'obsidian';
 import {
 	effectiveAuthoredLabel,
@@ -13,11 +11,12 @@ import {
 	normalizeLabel,
 	VariantBlock,
 	VariantSection,
-	ViewMode,
 } from '../core/types';
 import { SectionVariantsHost } from '../plugin-host';
-import { createSegmentedControl, VIEW_MODE_SEGMENTS } from './segmented-control';
+import { blockMarkerTooltip, openBlockMenu } from './block-menu';
+import { createSegmentedControl } from './segmented-control';
 import { hasRoomForColumns, resolveLengthPx } from './css-length';
+import { createVariantMarker } from './variant-marker';
 
 export class VariantBlockRenderer extends MarkdownRenderChild {
 	private renderComponent?: Component;
@@ -37,8 +36,14 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 	}
 
 	onload(): void {
-		this.unsubscribe = this.host.store.subscribe((path) => {
-			if (!path || path === this.sourcePath) void this.render();
+		this.unsubscribe = this.host.store.subscribe((change) => {
+			if (change.scope === 'settings') void this.render();
+			else if (
+				change.path === this.sourcePath &&
+				(change.scope === 'note' || change.blockKey === this.block.identityKey)
+			) {
+				void this.render();
+			}
 		});
 		this.resizeObserver = new ResizeObserver(() => {
 			const next = this.hasRoomForColumns();
@@ -71,12 +76,7 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 		const component = new Component();
 		this.renderComponent = this.addChild(component);
 		const state = this.host.store.resolve(this.sourcePath, this.block);
-		this.containerEl.toggleClass(
-			'section-variants-toolbar-always',
-			state.toolbarPinned ||
-				this.host.store.settings.toolbarVisibility === 'always',
-		);
-		this.renderToolbar(state.selectedLabel, state.view, state.differsFromAuthored);
+		this.renderToolbar(state.selectedLabel, state.differsFromAuthored);
 
 		const mode = state.view === 'auto' ? (this.autoColumns ? 'columns' : 'toggle') : state.view;
 		this.containerEl.dataset.currentView = mode;
@@ -124,21 +124,27 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 		}
 	}
 
-	private renderToolbar(
-		selectedLabel: string,
-		view: ViewMode,
-		differsFromAuthored: boolean,
-	): void {
+	private renderToolbar(selectedLabel: string, differsFromAuthored: boolean): void {
 		const toolbar = this.containerEl.createDiv({ cls: 'section-variants-toolbar' });
 		toolbar.setAttribute('role', 'toolbar');
 		toolbar.setAttribute('aria-label', 'Section variants');
+		createVariantMarker(toolbar, {
+			ariaLabel: 'Open variants menu',
+			tooltip: blockMarkerTooltip(
+				this.host,
+				this.sourcePath,
+				this.block,
+			),
+			differs:
+				differsFromAuthored && this.host.store.settings.showIndicators,
+			onClick: (event) => this.openMenu(event),
+		});
 		const active = this.block.variants.find(
 			(variant) => variant.normalizedLabel === normalizeLabel(selectedLabel),
 		);
 		createSegmentedControl(toolbar, {
 			cls: 'section-variants-labels',
 			ariaLabel: 'Variant',
-			emphasized: true,
 			value: active?.label,
 			options: this.block.variants.map((variant) => ({
 				value: variant.label,
@@ -162,126 +168,15 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 				}
 			},
 		});
-
-		createSegmentedControl(toolbar, {
-			cls: 'section-variants-view-segments',
-			ariaLabel: 'Block view',
-			value: view,
-			options: VIEW_MODE_SEGMENTS,
-			onSelect: (next) => void this.selectLocalView(next),
-		});
-
-		if (differsFromAuthored && this.host.store.settings.showIndicators) {
-			// PRD §11: subtle, with detail revealed only on hover or focus.
-			const indicator = toolbar.createSpan({
-				cls: 'section-variants-difference-indicator',
-				attr: {
-					role: 'img',
-					'aria-label': 'Current state differs from authored defaults',
-				},
-			});
-			setTooltip(
-				indicator,
-				`Current variant: ${selectedLabel}\nDefault variant: ${effectiveAuthoredLabel(this.block)}\nCurrent view: ${view}\nDefault view: ${effectiveAuthoredView(this.block, this.host.store.settings.defaultView)}`,
-			);
-		}
-
-		const menuButton = toolbar.createEl('button', {
-			cls: 'clickable-icon section-variants-menu-button',
-			type: 'button',
-			attr: { 'aria-label': 'Open block menu' },
-		});
-		setIcon(menuButton, 'more-horizontal');
-		menuButton.addEventListener('click', (event) => this.openMenu(event));
 	}
 
 	private openMenu(event: MouseEvent): void {
-		const state = this.host.store.resolve(this.sourcePath, this.block);
-		const menu = new Menu();
-		menu.addItem((item) =>
-			item.setTitle('Follow global state').setIcon('combine').onClick(() => {
-				if (!this.host.store.followGlobalLabel(this.sourcePath, this.block)) {
-					new Notice('This block does not contain the current global label.');
-				}
-			}),
+		openBlockMenu(
+			this.host,
+			this.sourcePath,
+			this.block,
+			event,
 		);
-		menu.addItem((item) =>
-			item.setTitle('Reset this block').setIcon('rotate-ccw').onClick(() => {
-				this.host.store.resetBlock(this.sourcePath, this.block);
-			}),
-		);
-		menu.addSeparator();
-		menu.addItem((item) =>
-			item.setTitle('Configure authored defaults').setIcon('settings-2').onClick(() => {
-				this.host.openBlockConfiguration(this.sourcePath, this.block);
-			}),
-		);
-		menu.addItem((item) =>
-			item.setTitle('Rename a variant').setIcon('text-cursor-input').onClick(() => {
-				this.host.openRenameVariant(this.sourcePath, this.block);
-			}),
-		);
-		menu.addItem((item) =>
-			item.setTitle('Save current column visibility').setIcon('eye').onClick(() => {
-				this.host.store.saveHidden(this.sourcePath, this.block);
-			}),
-		);
-		menu.addSeparator();
-		menu.addItem((item) =>
-			item.setTitle('Collapse inactive content').setIcon('panel-top-close').onClick(() => {
-				this.host.store.setBlockInactiveBehavior(
-					this.sourcePath,
-					this.block,
-					'collapsed',
-				);
-			}),
-		);
-		menu.addItem((item) =>
-			item.setTitle('Hide inactive content').setIcon('eye-off').onClick(() => {
-				this.host.store.setBlockInactiveBehavior(
-					this.sourcePath,
-					this.block,
-					'hidden',
-				);
-			}),
-		);
-		menu.addItem((item) =>
-			item.setTitle('Use note inactive-content setting').setIcon('undo-2').onClick(() => {
-				this.host.store.setBlockInactiveBehavior(
-					this.sourcePath,
-					this.block,
-					undefined,
-				);
-			}),
-		);
-		for (const variant of this.block.variants) {
-			if (!state.hiddenLabels.has(variant.normalizedLabel)) continue;
-			menu.addItem((item) =>
-				item.setTitle(`Show ${variant.label}`).setIcon('eye').onClick(() => {
-					this.host.store.toggleHidden(this.sourcePath, this.block, variant.label);
-				}),
-			);
-		}
-		menu.addItem((item) =>
-			item
-				.setTitle(state.toolbarPinned ? 'Unpin toolbar' : 'Pin toolbar')
-				.setIcon('pin')
-				.onClick(() => {
-					this.host.store.setToolbarPinned(
-						this.sourcePath,
-						this.block,
-						!state.toolbarPinned,
-					);
-				}),
-		);
-		if (!this.block.attributes.id && !this.block.blockId) {
-			menu.addItem((item) =>
-				item.setTitle('Add stable block ID').setIcon('fingerprint').onClick(() => {
-					void this.host.addStableBlockId(this.sourcePath, this.block);
-				}),
-			);
-		}
-		menu.showAtMouseEvent(event);
 	}
 
 	private renderColumnHeader(panel: HTMLElement, variant: VariantSection): void {
@@ -386,20 +281,11 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 	}
 
 	private async selectLocalVariant(label: string): Promise<void> {
-		if (
-			!(await this.host.ensurePersistentIdentity(this.sourcePath, this.block))
-		) {
-			return;
-		}
-		this.host.store.setSelectedLabel(this.sourcePath, this.block, label);
-	}
-
-	private async selectLocalView(view: ViewMode): Promise<void> {
-		if (
-			!(await this.host.ensurePersistentIdentity(this.sourcePath, this.block))
-		) {
-			return;
-		}
-		this.host.store.setView(this.sourcePath, this.block, view);
+		const persistent = await this.host.ensurePersistentIdentity(
+			this.sourcePath,
+			this.block,
+		);
+		if (!persistent) return;
+		this.host.store.setSelectedLabel(this.sourcePath, persistent, label);
 	}
 }

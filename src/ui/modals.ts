@@ -1,5 +1,10 @@
 import { App, Modal, Setting } from 'obsidian';
-import { SerializeOptions, VariantBlock, ViewMode } from '../core/types';
+import {
+	normalizeLabel,
+	SerializeOptions,
+	VariantBlock,
+	ViewMode,
+} from '../core/types';
 import { errorMessage } from '../core/errors';
 
 export class InsertVariantsModal extends Modal {
@@ -100,7 +105,7 @@ export class InsertVariantsModal extends Modal {
 
 	private submit(): void {
 		const labels = this.labels.map((label) => label.trim());
-		const normalized = labels.map((label) => label.toLocaleLowerCase());
+		const normalized = labels.map(normalizeLabel);
 		if (labels.some((label) => !label)) {
 			this.showError('Every variant needs a label.');
 			return;
@@ -329,4 +334,3 @@ export class RenameVariantModal extends Modal {
 function nextLabel(index: number): string {
 	return index < 26 ? String.fromCharCode(65 + index) : `Variant ${index + 1}`;
 }
-
