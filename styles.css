@@ -490,11 +490,6 @@ body.is-mobile .section-variants-column-header button {
 	display: none;
 }
 
-.section-variants-panel.is-editing:focus-within {
-	border-radius: var(--radius-s);
-	box-shadow: inset 0 0 0 1px var(--background-modifier-border-focus);
-}
-
 .section-variants-inline-editor .cm-editor.cm-focused {
 	outline: none;
 }

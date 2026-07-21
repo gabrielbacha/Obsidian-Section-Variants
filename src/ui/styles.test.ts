@@ -44,12 +44,12 @@ describe('presentation safety selectors', () => {
 		);
 	});
 
-	it('contains nested editors and replaces their removed focus outline', () => {
+	it('contains nested editors without adding an internal editing frame', () => {
 		expect(CSS).toMatch(
 			/\.section-variants-inline-editor \.cm-scroller\s*\{[^}]*overflow:\s*hidden/su,
 		);
-		expect(CSS).toMatch(
-			/\.section-variants-panel\.is-editing:focus-within\s*\{[^}]*box-shadow:/su,
+		expect(CSS).not.toContain(
+			'.section-variants-panel.is-editing:focus-within',
 		);
 		expect(CSS).toMatch(
 			/\.section-variants-inline-editor \.cm-editor\.cm-focused\s*\{[^}]*outline:\s*none/su,
