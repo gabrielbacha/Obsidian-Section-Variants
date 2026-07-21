@@ -180,8 +180,55 @@
 	text-align: start;
 }
 
+.section-variants-context-menu-item:not(.is-disabled):is(
+		:hover,
+		:focus-visible,
+		[aria-expanded='true']
+	) {
+	background: var(--background-modifier-hover);
+}
+
+.section-variants-context-menu-item:focus-visible {
+	outline: none;
+}
+
 .section-variants-context-menu-item.is-disabled {
 	opacity: 0.45;
+}
+
+.section-variants-context-menu-input-item {
+	padding: var(--size-4-2);
+}
+
+.section-variants-context-menu-input {
+	box-sizing: border-box;
+	width: 100%;
+	min-width: 14rem;
+}
+
+.section-variants-context-menu-checkbox {
+	display: inline-flex;
+	flex: 0 0 auto;
+	align-items: center;
+	justify-content: center;
+	width: 16px;
+	height: 16px;
+	margin-inline-start: auto;
+	border: 1px solid var(--checkbox-border-color, var(--background-modifier-border-hover));
+	border-radius: var(--checkbox-radius, 3px);
+	background: var(--background-primary);
+	color: var(--text-on-accent);
+}
+
+.section-variants-context-menu-item[aria-checked='true']
+	.section-variants-context-menu-checkbox {
+	border-color: var(--interactive-accent);
+	background: var(--interactive-accent);
+}
+
+.section-variants-context-menu-checkbox svg {
+	width: 13px;
+	height: 13px;
 }
 
 .section-variants-submenu-arrow {
@@ -189,6 +236,10 @@
 }
 
 body.is-mobile .section-variants-context-menu-item {
+	min-height: 44px;
+}
+
+body.is-mobile .section-variants-context-menu-input {
 	min-height: 44px;
 }
 
@@ -244,6 +295,9 @@ body.is-mobile .section-variants-context-menu-item {
 	position: relative;
 	min-width: 0;
 	padding: var(--size-4-3);
+	padding-block-start: calc(
+		var(--section-variants-control-size) + var(--size-2-1)
+	);
 	border: 1px solid var(--section-variants-rule, var(--background-modifier-border));
 	border-radius: var(--radius-s);
 }
@@ -332,7 +386,7 @@ body.is-mobile .section-variants-context-menu-item {
 
 .section-variants-column-header {
 	display: flex;
-	align-items: flex-start;
+	align-items: center;
 	justify-content: space-between;
 	gap: var(--size-2-2);
 	margin-block-end: var(--size-4-2);
@@ -354,17 +408,6 @@ body.is-mobile .section-variants-context-menu-item {
 	flex: 0 0 auto;
 	align-items: center;
 	gap: var(--size-2-1);
-}
-
-.section-variants-view-toggle
-	> .section-variants-panel
-	> .section-variants-column-header
-	> .section-variants-column-actions,
-.section-variants-view-columns
-	> .section-variants-panel:not(.section-variants-column-later-row)
-	> .section-variants-column-header
-	> .section-variants-column-actions {
-	margin-block-start: var(--size-4-3);
 }
 
 .section-variants-column-actions button {

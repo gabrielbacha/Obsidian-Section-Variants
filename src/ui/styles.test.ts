@@ -38,6 +38,21 @@ describe('presentation safety selectors', () => {
 		);
 	});
 
+	it('highlights hover, keyboard focus, and open submenu items', () => {
+		expect(CSS).toMatch(
+			/\.section-variants-context-menu-item:not\(\.is-disabled\):is\([\s\S]*:hover,[\s\S]*:focus-visible,[\s\S]*\[aria-expanded='true'\][\s\S]*\)\s*\{[^}]*background:\s*var\(--background-modifier-hover\)/su,
+		);
+	});
+
+	it('renders checked menu choices as explicit checkbox controls', () => {
+		expect(CSS).toMatch(
+			/\.section-variants-context-menu-checkbox\s*\{[^}]*border:\s*1px solid/su,
+		);
+		expect(CSS).toMatch(
+			/\.section-variants-context-menu-item\[aria-checked='true'\][\s\S]*\.section-variants-context-menu-checkbox\s*\{[^}]*background:\s*var\(--interactive-accent\)/su,
+		);
+	});
+
 	it('uses one stable inner frame without a redundant outer border', () => {
 		expect(CSS).toMatch(
 			/\.section-variants-root\s*\{[^}]*border:\s*0/su,
@@ -81,6 +96,12 @@ describe('presentation safety selectors', () => {
 		);
 	});
 
+	it('reserves a small vertical gap between the toolbar and first variant', () => {
+		expect(CSS).toMatch(
+			/\.section-variants-content\s*\{[^}]*padding-block-start:\s*calc\([\s\S]*section-variants-control-size[\s\S]*size-2-1/su,
+		);
+	});
+
 	it('pins the note-wide control to the bottom safe area', () => {
 		expect(CSS).toMatch(
 			/\.section-variants-sticky-control\s*\{[^}]*right:[^;]*safe-area-inset-right[^;]*;[^}]*bottom:[^}]*section-variants-bottom-obstruction[^}]*safe-area-inset-bottom/su,
@@ -112,9 +133,13 @@ describe('presentation safety selectors', () => {
 		);
 	});
 
-	it('clears first-row variant actions below the floating block toolbar', () => {
+	it('aligns variant titles and actions below the toolbar row', () => {
 		expect(CSS).toMatch(
-			/section-variants-panel:not\(\.section-variants-column-later-row\)[^}]*section-variants-column-actions\s*\{[^}]*margin-block-start:\s*var\(--size-4-3\)/su,
+			/\.section-variants-column-header\s*\{[^}]*align-items:\s*center/su,
 		);
+		expect(CSS).not.toMatch(
+			/section-variants-column-header\s*\{[^}]*padding-inline-end:/su,
+		);
+		expect(CSS).not.toMatch(/section-variants-column-actions\s*\{[^}]*margin-block-start:/su);
 	});
 });

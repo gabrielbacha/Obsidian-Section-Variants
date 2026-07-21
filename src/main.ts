@@ -15,13 +15,19 @@ import {
 	deleteVariant,
 	fixMissingClosers,
 	renameVariant,
-	updateBlockAttributes,
+	updateBlockAttributesPatch,
 } from './core/mutations';
 import { collectLabelCatalog } from './core/labels';
 import { resolveCurrentBlock } from './core/block-resolution';
 import { parseNote } from './core/parser';
 import { serializeVariantsBlock } from './core/serializer';
-import { ParsedNote, VariantBlock } from './core/types';
+import {
+	ContainerAttributes,
+	ParsedNote,
+	ResponsiveMode,
+	VariantBlock,
+	ViewMode,
+} from './core/types';
 import {
 	createLivePreviewExtension,
 	refreshLivePreviewEditors,
@@ -35,7 +41,7 @@ import { SectionVariantsSettingTab } from './settings';
 import { StateStore, StoreChange } from './state/store';
 import {
 	AddVariantModal,
-	BlockConfigurationModal,
+	ColumnRatiosModal,
 	DeleteVariantConfirmationModal,
 	InsertVariantsModal,
 	RenameVariantModal,
@@ -175,24 +181,90 @@ export default class SectionVariantsPlugin
 		).open();
 	}
 
-	openBlockConfiguration(
+	setBlockName(
+		path: string,
+		block: VariantBlock,
+		name: string,
+		origin?: HTMLElement,
+	): void {
+		this.queueBlockAttributesPatch(
+			path,
+			block,
+			{ name: name.trim() || undefined },
+			origin,
+		);
+	}
+
+	setBlockDefaultLabel(
+		path: string,
+		block: VariantBlock,
+		label: string,
+		origin?: HTMLElement,
+	): void {
+		this.queueBlockAttributesPatch(path, block, { defaultLabel: label }, origin);
+	}
+
+	setBlockAuthoredView(
+		path: string,
+		block: VariantBlock,
+		view: ViewMode,
+		origin?: HTMLElement,
+	): void {
+		this.queueBlockAttributesPatch(path, block, { view }, origin);
+	}
+
+	openColumnRatios(
 		path: string,
 		block: VariantBlock,
 		origin?: HTMLElement,
 	): void {
-		new BlockConfigurationModal(this.app, block, async (attributes) => {
-			const mapping = await updateBlockAttributes(
-				this.app,
-				path,
-				block,
-				attributes,
-				(source) => this.parseFresh(source),
-				this.resolveEditor(path, origin),
-			);
-			this.store.rekeyBlockState(path, mapping.before, mapping.after);
-			this.refreshAfterSourceMutation(path, mapping.source);
-			await this.store.flush();
+		new ColumnRatiosModal(this.app, block, async (widths) => {
+			await this.applyBlockAttributesPatch(path, block, { widths }, origin);
 		}).open();
+	}
+
+	setBlockResponsive(
+		path: string,
+		block: VariantBlock,
+		responsive: ResponsiveMode,
+		origin?: HTMLElement,
+	): void {
+		this.queueBlockAttributesPatch(
+			path,
+			block,
+			{ responsive: responsive === 'responsive' ? undefined : responsive },
+			origin,
+		);
+	}
+
+	private queueBlockAttributesPatch(
+		path: string,
+		block: VariantBlock,
+		patch: Partial<ContainerAttributes>,
+		origin?: HTMLElement,
+	): void {
+		void this.applyBlockAttributesPatch(path, block, patch, origin).catch(
+			(error) => new Notice(errorMessage(error)),
+		);
+	}
+
+	private async applyBlockAttributesPatch(
+		path: string,
+		block: VariantBlock,
+		patch: Partial<ContainerAttributes>,
+		origin?: HTMLElement,
+	): Promise<void> {
+		const mapping = await updateBlockAttributesPatch(
+			this.app,
+			path,
+			block,
+			patch,
+			(source) => this.parseFresh(source),
+			this.resolveEditor(path, origin),
+		);
+		this.store.rekeyBlockState(path, mapping.before, mapping.after);
+		this.refreshAfterSourceMutation(path, mapping.source);
+		await this.store.flush();
 	}
 
 	openAddVariant(path: string, block: VariantBlock, origin?: HTMLElement): void {

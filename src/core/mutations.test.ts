@@ -8,6 +8,8 @@ import {
 	fixMissingClosers,
 	renameVariant,
 	updateBlockAttributes,
+	updateBlockAttributesPatch,
+	updateBlockResponsive,
 } from './mutations';
 import { parseNote } from './parser';
 import { ParsedNote, VariantBlock } from './types';
@@ -285,6 +287,18 @@ describe('addVariant', () => {
 		expect(editor.getValue()).toContain('::: C\r\n\r\n:::\r\n::::');
 		expect(editor.getValue().replace(/\r\n/gu, '')).not.toContain('\n');
 	});
+
+	it('adds a default share to an existing column ratio', async () => {
+		const source = TWO_VARIANTS.replace(
+			':::: variants',
+			':::: {.variants widths="2fr 1fr"}',
+		);
+		const { app, path, read, firstBlock } = setup(source);
+
+		await addVariant(app, path, firstBlock(), 'C', parse);
+
+		expect(parse(read()).blocks[0]?.attributes.widths).toBe('2fr 1fr 1fr');
+	});
 });
 
 describe('updateBlockAttributes', () => {
@@ -330,6 +344,65 @@ describe('updateBlockAttributes', () => {
 			widths: '40% 60%',
 		});
 	});
+
+	it('patches one menu field while preserving every other current attribute', async () => {
+		const source = TWO_VARIANTS.replace(
+			':::: variants',
+			':::: {.variants #copy name="Old" view="columns" default="B" responsive="scroll"}',
+		);
+		const { app, path, read, firstBlock } = setup(source);
+
+		const result = await updateBlockAttributesPatch(
+			app,
+			path,
+			firstBlock(),
+			{ name: 'New' },
+			parse,
+		);
+
+		expect(result.after.attributes).toMatchObject({
+			id: 'copy',
+			name: 'New',
+			view: 'columns',
+			defaultLabel: 'B',
+			responsive: 'scroll',
+		});
+		expect(read()).not.toContain('name="Old"');
+	});
+});
+
+describe('updateBlockResponsive', () => {
+	it('sets and clears the authored narrow-screen layout without stale attributes', async () => {
+		const source = TWO_VARIANTS.replace(
+			':::: variants',
+			':::: {.variants name="Choices" view="columns"}',
+		);
+		const { app, path, read, firstBlock } = setup(source);
+
+		const stacked = await updateBlockResponsive(
+			app,
+			path,
+			firstBlock(),
+			'stack',
+			parse,
+		);
+		expect(stacked.after.attributes).toMatchObject({
+			name: 'Choices',
+			view: 'columns',
+			responsive: 'stack',
+		});
+
+		const wrapped = await updateBlockResponsive(
+			app,
+			path,
+			stacked.after,
+			'responsive',
+			parse,
+		);
+		expect(wrapped.after.attributes.responsive).toBeUndefined();
+		expect(read()).toContain('name="Choices"');
+		expect(read()).toContain('view="columns"');
+	});
 });
 
 describe('deleteVariant', () => {
@@ -370,5 +443,17 @@ describe('deleteVariant', () => {
 		await expect(
 			deleteVariant(app, path, result.after, 'B', parse),
 		).rejects.toThrow(/at least one/iu);
+	});
+
+	it('removes the deleted variant from an existing column ratio', async () => {
+		const source = TWO_VARIANTS.replace(
+			':::: variants',
+			':::: {.variants widths="2fr 1fr"}',
+		);
+		const { app, path, read, firstBlock } = setup(source);
+
+		await deleteVariant(app, path, firstBlock(), 'A', parse);
+
+		expect(parse(read()).blocks[0]?.attributes.widths).toBeUndefined();
 	});
 });

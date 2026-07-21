@@ -3,10 +3,17 @@ import { setIcon } from 'obsidian';
 export interface AttachedMenuItem {
 	label: string;
 	icon?: string;
+	checked?: boolean;
 	disabled?: boolean;
 	warning?: boolean;
 	onSelect?: () => void;
 	children?: AttachedMenuItem[];
+	input?: {
+		value: string;
+		placeholder?: string;
+		ariaLabel: string;
+		onSubmit: (value: string) => void;
+	};
 }
 
 export interface ViewportSize {
@@ -131,6 +138,9 @@ function createMenu(
 ): MenuHandle {
 	const ownerWindow = doc.win as Window & {
 		createDiv(): HTMLDivElement;
+		createEl<K extends keyof HTMLElementTagNameMap>(
+			tag: K,
+		): HTMLElementTagNameMap[K];
 	};
 	const element = ownerWindow.createDiv();
 	element.className = `menu section-variants-context-menu${root ? '' : ' section-variants-context-submenu'}`;
@@ -187,18 +197,55 @@ function createMenu(
 			element.append(separator);
 			continue;
 		}
+		if (item.input) {
+			const inputItem = ownerWindow.createDiv();
+			inputItem.className = 'section-variants-context-menu-input-item';
+			inputItem.setAttribute('role', 'none');
+			const input = ownerWindow.createEl('input');
+			input.className = 'section-variants-context-menu-input';
+			input.type = 'text';
+			input.value = item.input.value;
+			input.placeholder = item.input.placeholder ?? '';
+			input.setAttribute('aria-label', item.input.ariaLabel);
+			input.addEventListener(
+				'keydown',
+				(event) => {
+					if (event.key === 'Escape') return;
+					event.stopPropagation();
+					if (event.key !== 'Enter') return;
+					event.preventDefault();
+					item.input?.onSubmit(input.value);
+					handle.onSelect?.();
+				},
+				{ signal: controller.signal },
+			);
+			inputItem.append(input);
+			element.append(inputItem);
+			menuItems.push(input);
+			continue;
+		}
 		const menuItem = ownerWindow.createDiv();
 		menuItem.className = 'menu-item section-variants-context-menu-item';
-		menuItem.setAttribute('role', 'menuitem');
+		menuItem.setAttribute('role', item.checked === undefined ? 'menuitem' : 'menuitemcheckbox');
+		if (item.checked !== undefined) {
+			menuItem.setAttribute('aria-checked', String(item.checked));
+		}
 		menuItem.setAttribute('aria-disabled', String(item.disabled ?? false));
 		menuItem.tabIndex = -1;
 		menuItem.toggleClass('is-disabled', item.disabled ?? false);
 		menuItem.toggleClass('is-warning', item.warning ?? false);
-		if (item.icon) {
+		if (item.checked === undefined && item.icon) {
 			const icon = menuItem.createSpan({ cls: 'menu-item-icon' });
 			setIcon(icon, item.icon);
 		}
 		menuItem.createSpan({ cls: 'menu-item-title', text: item.label });
+		if (item.checked !== undefined) {
+			const checkbox = menuItem.createSpan({
+				cls: 'section-variants-context-menu-checkbox',
+			});
+			checkbox.setAttribute('aria-hidden', 'true');
+			if (item.checked) setIcon(checkbox, 'check');
+		}
 		if (item.children) {
 			menuItem.setAttribute('aria-haspopup', 'menu');
 			menuItem.setAttribute('aria-expanded', 'false');

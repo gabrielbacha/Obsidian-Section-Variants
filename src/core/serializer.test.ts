@@ -22,6 +22,12 @@ describe('serializeContainerOpening', () => {
 			':::: {.variants #topic name="Audience copy" view="columns" default="Long label" widths="40% 60%" min-width="320px" responsive="scroll"}',
 		);
 	});
+
+	it('preserves an explicitly authored Toggle view', () => {
+		expect(serializeContainerOpening(4, { view: 'toggle' })).toContain(
+			'view="toggle"',
+		);
+	});
 });
 
 describe('defaultHtmlExportPath', () => {

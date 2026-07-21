@@ -71,9 +71,12 @@ export class StickyControlManager {
 		control.setAttribute('role', 'toolbar');
 		control.setAttribute('aria-label', 'Note-wide section variants');
 
+		const states = new Map(
+			blocks.map((block) => [block, this.host.store.resolve(path, block)]),
+		);
 		const currentLabels = new Set(
 			blocks.map((block) =>
-				normalizeLabel(this.host.store.resolve(path, block).selectedLabel),
+				normalizeLabel(states.get(block)?.selectedLabel ?? ''),
 			),
 		);
 		const labels = unionLabels(blocks);
@@ -82,20 +85,61 @@ export class StickyControlManager {
 				? labels.find((label) => currentLabels.has(normalizeLabel(label)))
 				: undefined;
 		const views = new Set(
-			blocks.map((block) => this.host.store.resolve(path, block).view),
+			blocks.map((block) => states.get(block)?.view),
 		);
 		const activeView: ViewMode | undefined =
 			views.size === 1 ? [...views][0] : undefined;
+		const columnsMode = activeView === 'columns';
+		const visibleColumnLabels = columnsMode
+			? new Set(
+					labels.filter((label) => {
+						const normalized = normalizeLabel(label);
+						const matching = blocks.filter((block) =>
+							block.variants.some(
+								(variant) => variant.normalizedLabel === normalized,
+							),
+						);
+						return matching.every(
+							(block) => !states.get(block)?.hiddenLabels.has(normalized),
+						);
+					}),
+				)
+			: undefined;
 		const differs = blocks.some(
-			(block) => this.host.store.resolve(path, block).differsFromAuthored,
+			(block) => states.get(block)?.differsFromAuthored,
 		);
 		const reveal = control.createDiv({ cls: 'section-variants-reveal-controls' });
 		createSegmentedControl(reveal, {
 			cls: 'section-variants-labels',
-			ariaLabel: 'Apply variant across note',
-			value: activeLabel,
-			options: labels.map((label) => ({ value: label, text: label, label })),
+			ariaLabel: columnsMode
+				? 'Toggle columns across note'
+				: 'Apply variant across note',
+			value: columnsMode ? undefined : activeLabel,
+			activeValues: visibleColumnLabels,
+			options: labels.map((label) => {
+				const action = visibleColumnLabels?.has(label) ? 'Hide' : 'Show';
+				const description = columnsMode
+					? `${action} ${label} column across note`
+					: label;
+				return {
+					value: label,
+					text: label,
+					label: description,
+					tooltip: columnsMode ? description : undefined,
+				};
+			}),
 			onSelect: (label) => {
+				if (columnsMode) {
+					const result = this.host.store.toggleColumnAcrossNote(
+						path,
+						parsed,
+						label,
+					);
+					new Notice(
+						`${label} is now ${result.visible ? 'visible' : 'hidden'} in ${result.applied} block${result.applied === 1 ? '' : 's'}${result.skipped > 0 ? `, skipped ${result.skipped}` : ''}.`,
+					);
+					return;
+				}
 				const result = this.host.store.applyLabelAcrossNote(path, parsed, label);
 				new Notice(
 					`Applied to ${result.applied} block${result.applied === 1 ? '' : 's'}, skipped ${result.skipped}.`,

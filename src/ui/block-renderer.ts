@@ -15,7 +15,8 @@ import {
 import { SectionVariantsHost } from '../plugin-host';
 import { findReboundBlock } from '../reading/rebind';
 import { createBlockControls } from './block-controls';
-import { syncColumnSeparators } from './column-layout';
+import { visibleColumnWidths } from '../core/column-ratios';
+import { syncColumnGrid, syncColumnSeparators } from './column-layout';
 import { createVariantHeader } from './variant-header';
 
 export class VariantBlockRenderer extends MarkdownRenderChild {
@@ -24,6 +25,9 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 	private resizeObserver?: ResizeObserver;
 	private renderVersion = 0;
 	private columnsContent?: HTMLElement;
+	private columnWidths?: string;
+	private columnResponsive = 'responsive';
+	private visibleColumnCount = 0;
 
 	constructor(
 		private readonly host: SectionVariantsHost,
@@ -47,7 +51,15 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 			}
 		});
 		this.resizeObserver = new ResizeObserver(() => {
-			if (this.columnsContent) syncColumnSeparators(this.columnsContent);
+			if (this.columnsContent) {
+				syncColumnGrid(
+					this.columnsContent,
+					this.columnWidths,
+					this.columnResponsive,
+					this.visibleColumnCount,
+				);
+				syncColumnSeparators(this.columnsContent);
+			}
 		});
 		this.resizeObserver.observe(this.containerEl);
 		void this.render();
@@ -102,7 +114,16 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 		this.columnsContent = mode === 'columns' ? content : undefined;
 		content.dataset.responsive = state.responsive;
 		content.style.setProperty('--section-variants-min-width', state.minWidth);
-		if (mode === 'columns') this.configureColumns(content, state.widths, state.responsive);
+		if (mode === 'columns') {
+			this.columnWidths = visibleColumnWidths(
+				state.widths,
+				this.block.variants.length,
+				this.block.variants.flatMap((variant, index) =>
+					state.hiddenLabels.has(variant.normalizedLabel) ? [] : [index],
+				),
+			);
+			this.columnResponsive = state.responsive;
+		}
 
 		const variants = this.block.variants;
 		let visibleCount = 0;
@@ -155,7 +176,11 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 				this.host.store.restoreColumns(this.sourcePath, this.block);
 			});
 		}
-		if (mode === 'columns') syncColumnSeparators(content);
+		if (mode === 'columns') {
+			this.visibleColumnCount = visibleCount;
+			syncColumnGrid(content, this.columnWidths, state.responsive, visibleCount);
+			syncColumnSeparators(content);
+		}
 	}
 
 	private renderToolbar(mode: 'toggle' | 'columns'): void {
@@ -238,24 +263,11 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 		);
 	}
 
-	private configureColumns(
-		content: HTMLElement,
-		widths: string | undefined,
-		responsive: string,
-	): void {
-		if (
-			widths &&
-			!/[;{}]/u.test(widths) &&
-			window.CSS?.supports('grid-template-columns', widths)
-		) {
-			content.style.gridTemplateColumns = widths;
-		}
-		content.toggleClass('section-variants-columns-stack', responsive === 'stack');
-		content.toggleClass('section-variants-columns-scroll', responsive === 'scroll');
-	}
-
 	private clearRenderComponent(): void {
 		this.columnsContent = undefined;
+		this.columnWidths = undefined;
+		this.columnResponsive = 'responsive';
+		this.visibleColumnCount = 0;
 		if (!this.renderComponent) return;
 		this.removeChild(this.renderComponent);
 		this.renderComponent = undefined;

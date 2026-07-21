@@ -7,6 +7,10 @@ import {
 } from '../core/types';
 import { errorMessage } from '../core/errors';
 import { LabelCatalogEntry } from '../core/labels';
+import {
+	parseColumnRatios,
+	serializeColumnRatios,
+} from '../core/column-ratios';
 import { LabelInputSuggest } from './label-input-suggest';
 
 export class InsertVariantsModal extends Modal {
@@ -163,91 +167,40 @@ export class InsertVariantsModal extends Modal {
 	}
 }
 
-export class BlockConfigurationModal extends Modal {
-	private name: string;
-	private defaultLabel: string;
-	private view: ViewMode;
-	private widths: string;
-	private minWidth: string;
-	private responsive: 'responsive' | 'stack' | 'scroll';
+export class ColumnRatiosModal extends Modal {
+	private ratios: string[];
 	private errorEl?: HTMLElement;
 
 	constructor(
 		app: App,
 		private readonly block: VariantBlock,
-		private readonly onSubmit: (
-			attributes: VariantBlock['attributes'],
-		) => Promise<void>,
+		private readonly onSubmit: (widths: string | undefined) => Promise<void>,
 	) {
 		super(app);
-		this.name = block.attributes.name ?? '';
-		this.defaultLabel = block.attributes.defaultLabel ?? block.variants[0]?.label ?? '';
-		this.view = block.attributes.view ?? 'toggle';
-		this.widths = block.attributes.widths ?? '';
-		this.minWidth = block.attributes.minWidth ?? '';
-		this.responsive = block.attributes.responsive ?? 'responsive';
+		this.ratios = (
+			parseColumnRatios(block.attributes.widths, block.variants.length) ??
+			Array.from({ length: block.variants.length }, () => 1)
+		).map(String);
 	}
 
 	onOpen(): void {
-		this.setTitle('Configure variants block');
+		this.setTitle('Edit column relative widths');
 		new Setting(this.contentEl)
-			.setName('Box name')
-			.setDesc('Optional title shown above the variants.')
-			.addText((text) =>
-				text.setValue(this.name).onChange((value) => {
-					this.name = value;
-				}),
-			);
-		new Setting(this.contentEl)
-			.setName('Authored default')
-			.addDropdown((dropdown) => {
-				for (const variant of this.block.variants) {
-					dropdown.addOption(variant.label, variant.label);
-				}
-				dropdown.setValue(this.defaultLabel).onChange((value) => {
-					this.defaultLabel = value;
+			.setName('Column ratios')
+			.setDesc('Set the relative share for each variant. Equal values split the box evenly.');
+		this.block.variants.forEach((variant, index) => {
+			new Setting(this.contentEl)
+				.setName(variant.label)
+				.setDesc('Relative width')
+				.addText((text) => {
+					text.inputEl.type = 'number';
+					text.inputEl.min = '0.1';
+					text.inputEl.step = '0.1';
+					text.setValue(this.ratios[index] ?? '1').onChange((value) => {
+						this.ratios[index] = value;
+					});
 				});
-			});
-		new Setting(this.contentEl)
-			.setName('Authored view')
-			.addDropdown((dropdown) =>
-				dropdown
-					.addOptions({ toggle: 'Toggle', columns: 'Columns' })
-					.setValue(this.view)
-					.onChange((value) => {
-						this.view = value as ViewMode;
-					}),
-			);
-		new Setting(this.contentEl)
-			.setName('Column widths')
-			.setDesc('Optional CSS grid tracks, such as 40% 60% or 320px 1fr.')
-			.addText((text) =>
-				text.setValue(this.widths).onChange((value) => {
-					this.widths = value.trim();
-				}),
-			);
-		new Setting(this.contentEl)
-			.setName('Minimum width')
-			.setDesc('Leave blank to use the vault default.')
-			.addText((text) =>
-				text.setValue(this.minWidth).onChange((value) => {
-					this.minWidth = value.trim();
-				}),
-			);
-		new Setting(this.contentEl)
-			.setName('Responsive behavior')
-			.addDropdown((dropdown) =>
-				dropdown
-					.addOptions({
-						responsive: 'Responsive wrap',
-						stack: 'Stack',
-						scroll: 'Horizontal scroll',
-					})
-					.setValue(this.responsive)
-					.onChange((value) => {
-						this.responsive = value as typeof this.responsive;
-					}),
-			);
+		});
 		this.errorEl = this.contentEl.createDiv({ cls: 'section-variants-modal-error' });
 		this.errorEl.setAttribute('role', 'alert');
 		new Setting(this.contentEl)
@@ -256,7 +209,7 @@ export class BlockConfigurationModal extends Modal {
 			)
 			.addButton((button) =>
 				button
-					.setButtonText('Save box')
+					.setButtonText('Save widths')
 					.setCta()
 					.onClick(() => void this.submit()),
 			);
@@ -267,31 +220,13 @@ export class BlockConfigurationModal extends Modal {
 	}
 
 	private async submit(): Promise<void> {
-		if (
-			this.minWidth &&
-			!/^\d+(?:\.\d+)?(?:px|rem|em|ch)$/u.test(this.minWidth)
-		) {
-			this.errorEl?.setText('Minimum width must look like 320px or 20rem.');
-			return;
-		}
-		if (
-			this.widths &&
-			(/[;{}]/u.test(this.widths) ||
-				!window.CSS?.supports('grid-template-columns', this.widths))
-		) {
-			this.errorEl?.setText('Enter valid CSS grid column tracks.');
+		const ratios = this.ratios.map(Number);
+		if (ratios.some((value) => !Number.isFinite(value) || value <= 0)) {
+			this.errorEl?.setText('Every column ratio must be greater than zero.');
 			return;
 		}
 		try {
-			await this.onSubmit({
-				...this.block.attributes,
-				name: this.name.trim() || undefined,
-				defaultLabel: this.defaultLabel,
-				view: this.view,
-				widths: this.widths || undefined,
-				minWidth: this.minWidth || undefined,
-				responsive: this.responsive,
-			});
+			await this.onSubmit(serializeColumnRatios(ratios));
 			this.close();
 		} catch (error) {
 			this.errorEl?.setText(errorMessage(error));

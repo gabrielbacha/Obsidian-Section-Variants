@@ -70,7 +70,7 @@ export function serializeContainerOpening(
 	if (attributes.name) {
 		values.push(`name="${escapeAttribute(attributes.name)}"`);
 	}
-	if (attributes.view && attributes.view !== 'toggle') {
+	if (attributes.view) {
 		values.push(`view="${attributes.view}"`);
 	}
 	if (attributes.defaultLabel) {

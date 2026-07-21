@@ -5,6 +5,7 @@ import {
 	createNoteState,
 	DEFAULT_SETTINGS,
 	ensureBlockState,
+	PersistedBlockState,
 	PersistedNoteState,
 	pruneBlockState,
 	ResolvedBlockState,
@@ -15,7 +16,6 @@ import { randomBytes } from '../core/random';
 import {
 	normalizeLabel,
 	ParsedNote,
-	ResponsiveMode,
 	VariantBlock,
 	ViewMode,
 } from '../core/types';
@@ -77,10 +77,10 @@ export class StateStore {
 	}
 
 	setSelectedLabel(path: string, block: VariantBlock, label: string): void {
-		const note = this.getNote(path, true) as PersistedNoteState;
-		const state = ensureBlockState(note, block.identityKey);
+		const state = this.localizeBlock(path, block);
 		state.selectedLabel = label;
 		delete state.labelMode;
+		delete state.viewMode;
 		this.changed({ scope: 'block', path, blockKey: block.identityKey });
 	}
 
@@ -100,6 +100,7 @@ export class StateStore {
 			delete state.view;
 			delete state.labelMode;
 			delete state.viewMode;
+			delete state.globalMode;
 			pruneBlockState(note, block.identityKey);
 		}
 		if (resolveBlockState(block, note, this.settings).view !== 'columns') {
@@ -109,10 +110,20 @@ export class StateStore {
 		return { label, view };
 	}
 
+	isFollowingGlobalState(path: string, block: VariantBlock): boolean {
+		this.recoverLegacyIdentity(path, block);
+		return this.getNote(path)?.blocks[block.identityKey]?.globalMode !== 'local';
+	}
+
+	unfollowGlobalState(path: string, block: VariantBlock): void {
+		this.localizeBlock(path, block);
+		this.changed({ scope: 'block', path, blockKey: block.identityKey });
+	}
+
 	setView(path: string, block: VariantBlock, view: ViewMode): void {
-		const note = this.getNote(path, true) as PersistedNoteState;
-		const state = ensureBlockState(note, block.identityKey);
+		const state = this.localizeBlock(path, block);
 		state.view = view;
+		delete state.labelMode;
 		delete state.viewMode;
 		if (view !== 'columns') {
 			this.editingVariants.delete(sessionKey(path, block.identityKey));
@@ -159,6 +170,44 @@ export class StateStore {
 		}
 		this.sessionHidden.set(key, hidden);
 		this.emit({ scope: 'block', path, blockKey: block.identityKey });
+	}
+
+	toggleColumnAcrossNote(
+		path: string,
+		parsed: ParsedNote,
+		label: string,
+	): { visible: boolean; applied: number; skipped: number } {
+		const normalized = normalizeLabel(label);
+		const validBlocks = parsed.blocks.filter((block) => block.valid);
+		const matching = validBlocks.filter((block) =>
+			block.variants.some(
+				(variant) => variant.normalizedLabel === normalized,
+			),
+		);
+		// Mixed visibility resolves toward showing the column everywhere. Only a
+		// fully visible label toggles off across the note.
+		const visible = matching.some((block) =>
+			this.resolve(path, block).hiddenLabels.has(normalized),
+		);
+		for (const block of matching) {
+			const key = sessionKey(path, block.identityKey);
+			const hidden = new Set(this.resolve(path, block).hiddenLabels);
+			if (visible) hidden.delete(normalized);
+			else {
+				hidden.add(normalized);
+				const editing = this.editingVariants.get(key);
+				if (editing && normalizeLabel(editing) === normalized) {
+					this.editingVariants.delete(key);
+				}
+			}
+			this.sessionHidden.set(key, hidden);
+		}
+		this.emit({ scope: 'note', path });
+		return {
+			visible,
+			applied: matching.length,
+			skipped: validBlocks.length - matching.length,
+		};
 	}
 
 	restoreColumns(path: string, block: VariantBlock): void {
@@ -297,9 +346,25 @@ export class StateStore {
 		delete state.savedHiddenLabels;
 		state.labelMode = 'authored';
 		state.viewMode = 'authored';
+		state.globalMode = 'local';
 		this.sessionHidden.delete(sessionKey(path, block.identityKey));
 		this.editingVariants.delete(sessionKey(path, block.identityKey));
 		this.changed({ scope: 'block', path, blockKey: block.identityKey });
+	}
+
+	private localizeBlock(
+		path: string,
+		block: VariantBlock,
+	): PersistedBlockState {
+		const resolved = this.resolve(path, block);
+		const note = this.getNote(path, true) as PersistedNoteState;
+		const state = ensureBlockState(note, block.identityKey);
+		state.selectedLabel = resolved.selectedLabel;
+		state.view = resolved.view;
+		state.globalMode = 'local';
+		delete state.labelMode;
+		delete state.viewMode;
+		return state;
 	}
 
 	resetNote(path: string): void {
@@ -523,9 +588,6 @@ function migrateSettings(value: unknown): SectionVariantsSettings {
 			typeof value.defaultMinWidth === 'string'
 				? value.defaultMinWidth
 				: DEFAULT_SETTINGS.defaultMinWidth,
-		responsiveBehavior: isResponsiveMode(value.responsiveBehavior)
-			? value.responsiveBehavior
-			: DEFAULT_SETTINGS.responsiveBehavior,
 		stickyControlEnabled:
 			typeof value.stickyControlEnabled === 'boolean'
 				? value.stickyControlEnabled
@@ -573,6 +635,15 @@ function migrateNotes(value: unknown): Record<string, PersistedNoteState> {
 				if (view) block.view = view;
 				if (rawBlock.labelMode === 'authored') block.labelMode = 'authored';
 				if (rawBlock.viewMode === 'authored') block.viewMode = 'authored';
+				if (
+					rawBlock.globalMode === 'local' ||
+					typeof rawBlock.selectedLabel === 'string' ||
+					view !== undefined ||
+					rawBlock.labelMode === 'authored' ||
+					rawBlock.viewMode === 'authored'
+				) {
+					block.globalMode = 'local';
+				}
 				if (Array.isArray(rawBlock.savedHiddenLabels)) {
 					const labels = rawBlock.savedHiddenLabels.filter(
 						(label): label is string => typeof label === 'string',
@@ -597,10 +668,6 @@ function isViewMode(value: unknown): value is ViewMode {
 
 function migrateViewMode(value: unknown): ViewMode | undefined {
 	return value === 'auto' ? 'columns' : isViewMode(value) ? value : undefined;
-}
-
-function isResponsiveMode(value: unknown): value is ResponsiveMode {
-	return value === 'responsive' || value === 'stack' || value === 'scroll';
 }
 
 function randomToken(): string {

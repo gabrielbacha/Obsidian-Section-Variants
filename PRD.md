@@ -132,7 +132,7 @@ Both shorthand and explicit syntax are supported. The plugin generates shorthand
 ### 6.4 Optional attributes
 
 ```markdown
-:::: {.variants #topic-1 name="Topic alternatives" view="columns" default="A" widths="40% 60%" min-width="320px" responsive="responsive"}
+:::: {.variants #topic-1 name="Topic alternatives" view="columns" default="A" widths="2fr 1fr" responsive="responsive"}
 
 ...
 
@@ -147,8 +147,7 @@ Supported attributes:
 | `name`      | Optional title rendered for the whole box |
 | `view`      | `toggle` or `columns`                |
 | `default`   | Authored default label               |
-| `widths`    | CSS grid track values                |
-| `min-width` | Minimum column width before stacking |
+| `widths`    | Relative column ratios serialized as `fr` tracks |
 | `responsive` | `responsive`, `stack`, or `scroll` |
 
 Opening fences and their attributes must fit on one line. Labels are nonempty, single-line Unicode strings. Labels containing spaces or punctuation use the explicit `.variant` form.
@@ -172,34 +171,35 @@ Displays all currently visible variants side by side.
 Default behavior:
 
 - equal-width columns
-- minimum width of `320px`
+- automatic wrapping when the pane can no longer fit the columns comfortably
 - stack vertically when space is insufficient
 - two variants remain side by side when possible
 - three or more variants use equal-width tracks until stacking is required
 
-Supported width examples:
+The **Edit column relative widths** dialog shows one positive ratio per variant. It is the only box-configuration dialog. Equal ratios omit the attribute and use equal-width columns. Unequal ratios serialize as fractional tracks:
 
 ```markdown
-widths="40% 60%"
-widths="320px 1fr"
+widths="2fr 1fr"
 widths="1fr 1fr 2fr"
 ```
 
-Invalid values fall back to equal widths.
+Legacy CSS widths and `min-width` remain readable but are not exposed for new configuration. Invalid values fall back to equal widths.
 
 ### 7.3 Legacy Auto compatibility
 
 Existing `view="auto"` source remains valid and resolves to responsive Columns. Auto is not offered for new state or authored configuration because Columns already adapts to the available width.
 
-### 7.4 Responsive overrides
+### 7.4 Narrow-screen layout
 
-Each block may use:
+Each block may choose:
 
-- `responsive`
-- `stack`
-- `scroll`
+- `responsive`: wrap columns into additional rows when needed
+- `stack`: always use one column per row
+- `scroll`: retain one horizontal row and allow horizontal scrolling
 
 The default is `responsive`.
+
+The rendered block context menu exposes these as an attached, checked **Narrow-screen layout** submenu. Choosing an option rewrites only that block’s authored container attribute through the open editor transaction. The choice is not duplicated in a dialog or vault-wide settings.
 
 ## 8. Per-block controls
 
@@ -262,7 +262,6 @@ Markdown may store:
 - default variant
 - default view
 - widths
-- minimum width
 - semantic ID
 - responsive behavior
 
@@ -292,7 +291,7 @@ Current UI state resolves in this order:
 
 Markdown attributes define authored defaults; they do not prevent temporary or persisted UI selections from overriding those defaults.
 
-Resetting a block sets independent authored markers for its label and view, so an existing note-wide value is ignored without copying and freezing the literal authored value. A later local choice clears only its corresponding marker. A note-wide label or view action also clears the corresponding marker on valid blocks. **Follow global state** clears both local overrides and both markers; it follows a compatible global label and any present global view, otherwise falling back to authored state for the unavailable dimension.
+Resetting a block sets independent authored markers for its label and view, so an existing note-wide value is ignored without copying and freezing the literal authored value. A local label or view choice opts the block out of note-wide changes and snapshots both current dimensions. **Follow global state** is exposed as a checked menu item and is on by default. Turning it on clears local overrides and authored-reset markers; turning it off snapshots the currently resolved label and view. The opt-out is persisted, so later note-wide actions do not silently re-enable following.
 
 Source mutations return old/new block identity mappings. Stable-ID creation and label rename atomically migrate persisted block state, session-hidden columns, editing state, selected labels, and affected note-wide labels before data is flushed. Label normalization is deterministic `trim().toLowerCase()`; schema migration attempts recovery of older locale-sensitive fingerprint keys when they can be reproduced.
 
@@ -309,6 +308,8 @@ A command resets all blocks to authored defaults.
 When current state differs from the authored default, the marker shows a subtle dot.
 
 The sticky note control also shows an indicator when any block differs.
+
+When every valid block uses Columns, the sticky label buttons control note-wide column visibility rather than the Toggle selection. A label visible in every matching block hides everywhere when selected; a mixed or hidden label becomes visible everywhere.
 
 The concise marker tooltip reports the useful state on one line, for example:
 
@@ -505,7 +506,7 @@ Mobile is supported in v1.
 Behavior:
 
 - toggle mode works normally
-- columns stack by default
+- columns wrap by default
 - sticky controls remain available
 - inactive Live Preview variants remain hidden
 - touch controls remain visible and use 44px targets
@@ -518,7 +519,6 @@ Vault-wide settings include:
 
 - default view
 - default minimum column width
-- responsive columns behavior
 - sticky control enabled
 - automatic block-ID creation
 - supported container aliases
@@ -535,8 +535,8 @@ The v1 release is complete when a user can:
 2. Use unrestricted labels with autocomplete.
 3. Switch one section independently.
 4. Apply a label to all matching sections in the current note.
-5. Use toggle, columns, and auto views.
-6. Configure CSS-style column widths.
+5. Use Toggle and responsive Columns views.
+6. Configure a relative width ratio for each current variant.
 7. Restore state after reopening a note.
 8. Distinguish current state from authored defaults.
 9. Reset one block or the full note.

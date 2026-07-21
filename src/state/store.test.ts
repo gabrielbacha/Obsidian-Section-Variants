@@ -45,7 +45,6 @@ describe('state migration', () => {
 		expect(migrated.data.settings).toEqual({
 			defaultView: 'columns',
 			defaultMinWidth: '20rem',
-			responsiveBehavior: 'stack',
 			stickyControlEnabled: false,
 			automaticBlockIds: true,
 			aliases: ['variants', 'versions'],
@@ -61,6 +60,7 @@ describe('state migration', () => {
 					selectedLabel: 'B',
 					view: 'columns',
 					savedHiddenLabels: ['C'],
+					globalMode: 'local',
 				},
 			},
 		});
@@ -110,6 +110,7 @@ describe('state migration', () => {
 					savedHiddenLabels: ['A'],
 					labelMode: 'authored',
 					viewMode: 'authored',
+					globalMode: 'local',
 				},
 			},
 		});
@@ -228,6 +229,42 @@ describe('state identity migration', () => {
 			view: 'columns',
 		});
 		expect(note.blocks[block.identityKey]).toBeUndefined();
+		expect(store.isFollowingGlobalState('Note.md', block)).toBe(true);
+	});
+
+	it('turning global following off freezes the current label and view locally', async () => {
+		const store = await createStore();
+		const block = parseNote(blockSource()).blocks[0]!;
+		const note = store.getNote('Note.md', true)!;
+		note.globalLabel = 'B';
+		note.globalView = 'columns';
+		expect(store.isFollowingGlobalState('Note.md', block)).toBe(true);
+
+		store.unfollowGlobalState('Note.md', block);
+		store.applyLabelAcrossNote('Note.md', parseNote(blockSource()), 'A');
+		store.applyViewAcrossNote('Note.md', parseNote(blockSource()), 'toggle');
+
+		expect(store.isFollowingGlobalState('Note.md', block)).toBe(false);
+		expect(store.resolve('Note.md', block)).toMatchObject({
+			selectedLabel: 'B',
+			view: 'columns',
+		});
+
+		store.followGlobalState('Note.md', block);
+		expect(store.isFollowingGlobalState('Note.md', block)).toBe(true);
+		expect(store.resolve('Note.md', block)).toMatchObject({
+			selectedLabel: 'A',
+			view: 'toggle',
+		});
+	});
+
+	it('shows untouched blocks as following even before a global choice exists', async () => {
+		const store = await createStore();
+		const block = parseNote(blockSource()).blocks[0]!;
+
+		expect(store.isFollowingGlobalState('Note.md', block)).toBe(true);
+		store.unfollowGlobalState('Note.md', block);
+		expect(store.isFollowingGlobalState('Note.md', block)).toBe(false);
 	});
 
 	it('clears inline editing when its column or view becomes unavailable', async () => {
@@ -249,6 +286,32 @@ describe('state identity migration', () => {
 		store.getNote('Note.md', true)!.globalView = 'toggle';
 		store.followGlobalState('Note.md', block);
 		expect(store.getEditingVariant('Note.md', block)).toBeUndefined();
+	});
+
+	it('toggles a matching column all off or all on across the note', async () => {
+		const store = await createStore();
+		const parsed = parseNote([
+			blockSource(),
+			blockSource().replace('::: B\nTwo', '::: C\nThree'),
+			blockSource()
+				.replace('::: A\nOne', '::: D\nFour')
+				.replace('::: B\nTwo', '::: E\nFive'),
+		].join('\n\n'));
+		const [first, second] = parsed.blocks;
+		if (!first || !second) throw new Error('Missing fixture blocks');
+		store.setEditingVariant('Note.md', first, 'A');
+
+		const hidden = store.toggleColumnAcrossNote('Note.md', parsed, 'A');
+		expect(hidden).toEqual({ visible: false, applied: 2, skipped: 1 });
+		expect(store.resolve('Note.md', first).hiddenLabels.has('a')).toBe(true);
+		expect(store.resolve('Note.md', second).hiddenLabels.has('a')).toBe(true);
+		expect(store.getEditingVariant('Note.md', first)).toBeUndefined();
+
+		store.toggleHidden('Note.md', first, 'A');
+		const shown = store.toggleColumnAcrossNote('Note.md', parsed, 'A');
+		expect(shown).toEqual({ visible: true, applied: 2, skipped: 1 });
+		expect(store.resolve('Note.md', first).hiddenLabels.has('a')).toBe(false);
+		expect(store.resolve('Note.md', second).hiddenLabels.has('a')).toBe(false);
 	});
 });
 

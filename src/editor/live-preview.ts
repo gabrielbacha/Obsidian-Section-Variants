@@ -24,9 +24,10 @@ import {
 	setIcon,
 } from 'obsidian';
 import { VariantBlock, VariantSection } from '../core/types';
+import { visibleColumnWidths } from '../core/column-ratios';
 import { SectionVariantsHost } from '../plugin-host';
 import { createBlockControls } from '../ui/block-controls';
-import { syncColumnSeparators } from '../ui/column-layout';
+import { syncColumnGrid, syncColumnSeparators } from '../ui/column-layout';
 import {
 	createVariantHeader,
 	VariantHeaderHandle,
@@ -382,24 +383,15 @@ class LiveBlockWidget extends WidgetType {
 			}
 			return root;
 		}
-		if (
-			state.widths &&
-			!/[;{}]/u.test(state.widths) &&
-			root.ownerDocument.defaultView?.CSS?.supports(
-				'grid-template-columns',
-				state.widths,
-			)
-		) {
-			content.style.gridTemplateColumns = state.widths;
-		}
-		content.toggleClass(
-			'section-variants-columns-stack',
-			state.responsive === 'stack',
+		const visibleIndexes = this.block.variants.flatMap((variant, index) =>
+			state.hiddenLabels.has(variant.normalizedLabel) ? [] : [index],
 		);
-		content.toggleClass(
-			'section-variants-columns-scroll',
-			state.responsive === 'scroll',
+		const widths = visibleColumnWidths(
+			state.widths,
+			this.block.variants.length,
+			visibleIndexes,
 		);
+		const visibleCount = visibleIndexes.length;
 		for (const variant of this.block.variants) {
 			if (state.hiddenLabels.has(variant.normalizedLabel)) continue;
 			const panel = content.createDiv({ cls: 'section-variants-panel' });
@@ -437,9 +429,11 @@ class LiveBlockWidget extends WidgetType {
 			});
 		}
 		resources.columnObserver = new ResizeObserver(() => {
+			syncColumnGrid(content, widths, state.responsive, visibleCount);
 			syncColumnSeparators(content);
 		});
 		resources.columnObserver.observe(content);
+		syncColumnGrid(content, widths, state.responsive, visibleCount);
 		syncColumnSeparators(content);
 		return root;
 	}

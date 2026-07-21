@@ -26,31 +26,6 @@ export class SectionVariantsSettingTab extends PluginSettingTab {
 					options: { toggle: 'Toggle', columns: 'Columns' },
 				},
 			},
-			{
-				name: 'Default minimum column width',
-				desc: 'Use a positive px, rem, em, or ch value.',
-				control: {
-					type: 'text',
-					key: 'defaultMinWidth',
-					validate: (value) =>
-						/^\d+(?:\.\d+)?(?:px|rem|em|ch)$/u.test(value.trim())
-							? undefined
-							: 'Enter a positive value such as 320px or 20rem.',
-				},
-			},
-			{
-				name: 'Responsive columns',
-				desc: 'Choose how columns behave when space is limited.',
-				control: {
-					type: 'dropdown',
-					key: 'responsiveBehavior',
-					options: {
-						responsive: 'Responsive wrap',
-						stack: 'Stack',
-						scroll: 'Horizontal scroll',
-					},
-				},
-			},
 			definitionToggle(
 				'Show sticky note control',
 				'Show the note-wide control when a note contains at least two valid variants blocks.',

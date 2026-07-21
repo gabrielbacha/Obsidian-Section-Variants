@@ -11,7 +11,6 @@ import {
 export interface SectionVariantsSettings {
 	defaultView: ViewMode;
 	defaultMinWidth: string;
-	responsiveBehavior: ResponsiveMode;
 	stickyControlEnabled: boolean;
 	automaticBlockIds: boolean;
 	aliases: string[];
@@ -22,7 +21,6 @@ export interface SectionVariantsSettings {
 export const DEFAULT_SETTINGS: SectionVariantsSettings = {
 	defaultView: 'toggle',
 	defaultMinWidth: '320px',
-	responsiveBehavior: 'responsive',
 	stickyControlEnabled: true,
 	automaticBlockIds: false,
 	aliases: ['variants'],
@@ -36,6 +34,8 @@ export interface PersistedBlockState {
 	savedHiddenLabels?: string[];
 	labelMode?: 'authored';
 	viewMode?: 'authored';
+	/** Explicit opt-out from note-wide label and view changes. */
+	globalMode?: 'local';
 }
 
 export interface PersistedNoteState {
@@ -69,14 +69,16 @@ export function resolveBlockState(
 	const authoredLabel = effectiveAuthoredLabel(block);
 	const selectedLabel =
 		findAuthoredLabel(block, persisted?.selectedLabel) ??
-		(persisted?.labelMode === 'authored'
+		(persisted?.labelMode === 'authored' || persisted?.globalMode === 'local'
 			? authoredLabel
 			: findAuthoredLabel(block, note?.globalLabel)) ??
 		authoredLabel;
 	const authoredView = effectiveAuthoredView(block, settings.defaultView);
 	const view =
 		persisted?.view ??
-		(persisted?.viewMode === 'authored' ? authoredView : note?.globalView) ??
+		(persisted?.viewMode === 'authored' || persisted?.globalMode === 'local'
+			? authoredView
+			: note?.globalView) ??
 		authoredView;
 	const hiddenLabels = new Set(
 		[...(sessionHiddenLabels ?? persisted?.savedHiddenLabels ?? [])].map(
@@ -86,7 +88,7 @@ export function resolveBlockState(
 	return {
 		selectedLabel,
 		view,
-		responsive: block.attributes.responsive ?? settings.responsiveBehavior,
+		responsive: block.attributes.responsive ?? 'responsive',
 		minWidth: block.attributes.minWidth ?? settings.defaultMinWidth,
 		widths: block.attributes.widths,
 		hiddenLabels,
@@ -113,6 +115,11 @@ export function applyGlobalLabel(
 	let applied = 0;
 	let skipped = 0;
 	for (const block of parsed.blocks.filter((candidate) => candidate.valid)) {
+		const existing = note.blocks[block.identityKey];
+		if (existing?.globalMode === 'local') {
+			skipped += 1;
+			continue;
+		}
 		const matches = block.variants.some(
 			(variant) => variant.normalizedLabel === normalized,
 		);
@@ -142,7 +149,7 @@ export function applyGlobalView(
 	note.globalView = view;
 	for (const block of parsed.blocks.filter((candidate) => candidate.valid)) {
 		const state = note.blocks[block.identityKey];
-		if (!state) continue;
+		if (!state || state.globalMode === 'local') continue;
 		delete state.view;
 		delete state.viewMode;
 		pruneBlockState(note, block.identityKey);
@@ -168,7 +175,8 @@ export function pruneBlockState(
 		state.view === undefined &&
 		state.savedHiddenLabels === undefined &&
 		state.labelMode === undefined &&
-		state.viewMode === undefined
+		state.viewMode === undefined &&
+		state.globalMode === undefined
 	) {
 		delete note.blocks[identityKey];
 	}

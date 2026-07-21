@@ -1,6 +1,47 @@
 export interface ColumnRowPosition {
 	laterRow: boolean;
 	rowStart: boolean;
+	rowEnd: boolean;
+}
+
+const DEFAULT_COLUMN_WIDTH = 320;
+
+export function activeColumnWidths(
+	widths: string | undefined,
+	responsive: string,
+	availableWidth: number,
+	visibleCount: number,
+): string | undefined {
+	if (!widths || responsive !== 'responsive' || visibleCount < 1) return undefined;
+	return availableWidth >= DEFAULT_COLUMN_WIDTH * visibleCount
+		? widths
+		: undefined;
+}
+
+export function syncColumnGrid(
+	content: HTMLElement,
+	widths: string | undefined,
+	responsive: string,
+	visibleCount: number,
+): void {
+	const active = activeColumnWidths(
+		widths,
+		responsive,
+		content.clientWidth,
+		visibleCount,
+	);
+	if (
+		active &&
+		!/[;{}]/u.test(active) &&
+		content.ownerDocument.defaultView?.CSS?.supports(
+			'grid-template-columns',
+			active,
+		)
+	) {
+		content.style.gridTemplateColumns = active;
+	} else content.style.removeProperty('grid-template-columns');
+	content.toggleClass('section-variants-columns-stack', responsive === 'stack');
+	content.toggleClass('section-variants-columns-scroll', responsive === 'scroll');
 }
 
 /** Classify visual grid rows from direct-panel top offsets. */
@@ -13,6 +54,8 @@ export function classifyColumnRows(
 			firstTop !== undefined && top > firstTop + 1,
 		rowStart:
 			index > 0 && top > (tops[index - 1] ?? top) + 1,
+		rowEnd:
+			index === tops.length - 1 || (tops[index + 1] ?? top) > top + 1,
 	}));
 }
 
@@ -25,6 +68,7 @@ export function syncColumnSeparators(content: HTMLElement): void {
 		panel.removeClass(
 			'section-variants-column-later-row',
 			'section-variants-column-row-start',
+			'section-variants-column-row-end',
 		);
 	}
 	const visiblePanels = allPanels.filter(
@@ -45,6 +89,10 @@ export function syncColumnSeparators(content: HTMLElement): void {
 		panel.toggleClass(
 			'section-variants-column-row-start',
 			position.rowStart,
+		);
+		panel.toggleClass(
+			'section-variants-column-row-end',
+			position.rowEnd,
 		);
 	});
 }

@@ -1,6 +1,7 @@
 import { App, Editor, TFile } from 'obsidian';
 import { SAFE_SHORTHAND_LABEL } from './attributes';
 import { resolveCurrentBlock } from './block-resolution';
+import { parseColumnRatios, serializeColumnRatios } from './column-ratios';
 import { randomBytes } from './random';
 import { escapeAttribute, serializeContainerOpening } from './serializer';
 import { runStructuralTransaction } from './structural-transaction';
@@ -8,6 +9,7 @@ import {
 	ContainerAttributes,
 	normalizeLabel,
 	ParsedNote,
+	ResponsiveMode,
 	VariantBlock,
 } from './types';
 
@@ -63,7 +65,23 @@ export async function addVariant(
 		const opening = serializeVariantOpening(marker, trimmed);
 		const lineBreak = source.includes('\r\n') ? '\r\n' : '\n';
 		const insertion = `${opening}${lineBreak}${lineBreak}${marker}${lineBreak}`;
-		return `${source.slice(0, current.closing.from)}${insertion}${source.slice(current.closing.from)}`;
+		const edits = [
+			{ from: current.closing.from, to: current.closing.from, text: insertion },
+		];
+		const ratios = current.attributes.widths
+			? parseColumnRatios(current.attributes.widths, current.variants.length)
+			: undefined;
+		if (ratios) {
+			edits.push({
+				from: current.opening.from,
+				to: current.opening.to,
+				text: serializeContainerOpening(current.opening.colonCount, {
+					...current.attributes,
+					widths: serializeColumnRatios([...ratios, 1]),
+				}),
+			});
+		}
+		return applyEdits(source, edits);
 	}, editor);
 	return { ...mapping, label: trimmed };
 }
@@ -94,17 +112,33 @@ export async function deleteVariant(
 		if (source.slice(end, end + 2) === '\r\n') end += 2;
 		else if (source.charCodeAt(end) === 10) end += 1;
 		const edits = [{ from: variant.opening.from, to: end, text: '' }];
+		const updatedAttributes = { ...current.attributes };
+		let attributesChanged = false;
 		if (
 			current.attributes.defaultLabel &&
 			normalizeLabel(current.attributes.defaultLabel) === normalized
 		) {
+			updatedAttributes.defaultLabel = undefined;
+			attributesChanged = true;
+		}
+		const ratios = current.attributes.widths
+			? parseColumnRatios(current.attributes.widths, current.variants.length)
+			: undefined;
+		if (ratios) {
+			const variantIndex = current.variants.indexOf(variant);
+			updatedAttributes.widths = serializeColumnRatios(
+				ratios.filter((_ratio, index) => index !== variantIndex),
+			);
+			attributesChanged = true;
+		}
+		if (attributesChanged) {
 			edits.push({
 				from: current.opening.from,
 				to: current.opening.to,
-				text: serializeContainerOpening(current.opening.colonCount, {
-					...current.attributes,
-					defaultLabel: undefined,
-				}),
+				text: serializeContainerOpening(
+					current.opening.colonCount,
+					updatedAttributes,
+				),
 			});
 		}
 		return applyEdits(source, edits);
@@ -168,6 +202,44 @@ export async function updateBlockAttributes(
 		);
 		return `${source.slice(0, current.opening.from)}${opening}${source.slice(current.opening.to)}`;
 	}, editor);
+}
+
+export async function updateBlockAttributesPatch(
+	app: App,
+	path: string,
+	target: VariantBlock,
+	patch: Partial<ContainerAttributes>,
+	parse: (source: string) => ParsedNote,
+	editor?: Editor,
+): Promise<BlockIdentityMapping & SourceMutationResult> {
+	return processTarget(app, path, target, parse, (source, current) => {
+		const opening = serializeContainerOpening(current.opening.colonCount, {
+			...current.attributes,
+			...patch,
+		});
+		return `${source.slice(0, current.opening.from)}${opening}${source.slice(current.opening.to)}`;
+	}, editor);
+}
+
+export async function updateBlockResponsive(
+	app: App,
+	path: string,
+	target: VariantBlock,
+	responsive: ResponsiveMode,
+	parse: (source: string) => ParsedNote,
+	editor?: Editor,
+): Promise<BlockIdentityMapping & SourceMutationResult> {
+	return updateBlockAttributesPatch(
+		app,
+		path,
+		target,
+		{
+			// Wrap is the syntax default, so keep the opening fence quiet.
+			responsive: responsive === 'responsive' ? undefined : responsive,
+		},
+		parse,
+		editor,
+	);
 }
 
 export async function renameVariant(

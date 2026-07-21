@@ -1,8 +1,23 @@
+import { ResponsiveMode } from '../core/types';
+
 export const BLOCK_MENU_ACTIONS = [
 	'Add variant',
 	'Rename variant',
 	'Delete variant',
-	'Configure box',
+	'Box name',
+	'Authored default',
+	'Authored view',
+	'Edit column relative widths',
+	'Narrow-screen layout',
 	'Follow global state',
 	'Reset to authored defaults',
 ] as const;
+
+export const NARROW_LAYOUT_OPTIONS: ReadonlyArray<{
+	label: string;
+	value: ResponsiveMode;
+}> = [
+	{ label: 'Wrap into rows', value: 'responsive' },
+	{ label: 'Stack vertically', value: 'stack' },
+	{ label: 'Scroll horizontally', value: 'scroll' },
+];
