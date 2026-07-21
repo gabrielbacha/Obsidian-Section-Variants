@@ -1,7 +1,8 @@
-import { App, TFile } from 'obsidian';
+import { App, Editor, TFile } from 'obsidian';
 import { SAFE_SHORTHAND_LABEL } from './attributes';
 import { randomBytes } from './random';
 import { escapeAttribute, serializeContainerOpening } from './serializer';
+import { runStructuralTransaction } from './structural-transaction';
 import {
 	ContainerAttributes,
 	normalizeLabel,
@@ -14,18 +15,26 @@ export interface BlockIdentityMapping {
 	after: VariantBlock;
 }
 
-export interface StableIdMutationResult extends BlockIdentityMapping {
+export interface SourceMutationResult {
+	source: string;
+}
+
+export interface StableIdMutationResult
+	extends BlockIdentityMapping,
+		SourceMutationResult {
 	id: string;
 }
 
-export interface RenameMutationResult {
+export interface RenameMutationResult extends SourceMutationResult {
 	oldLabel: string;
 	newLabel: string;
 	acrossNote: boolean;
 	mappings: BlockIdentityMapping[];
 }
 
-export interface VariantMutationResult extends BlockIdentityMapping {
+export interface VariantMutationResult
+	extends BlockIdentityMapping,
+		SourceMutationResult {
 	label: string;
 }
 
@@ -35,6 +44,7 @@ export async function addVariant(
 	target: VariantBlock,
 	label: string,
 	parse: (source: string) => ParsedNote,
+	editor?: Editor,
 ): Promise<VariantMutationResult> {
 	const trimmed = validateNewLabel(label);
 	const mapping = await processTarget(app, path, target, parse, (source, current) => {
@@ -53,7 +63,7 @@ export async function addVariant(
 		const lineBreak = source.includes('\r\n') ? '\r\n' : '\n';
 		const insertion = `${opening}${lineBreak}${lineBreak}${marker}${lineBreak}`;
 		return `${source.slice(0, current.closing.from)}${insertion}${source.slice(current.closing.from)}`;
-	});
+	}, editor);
 	return { ...mapping, label: trimmed };
 }
 
@@ -63,14 +73,15 @@ export async function deleteVariant(
 	target: VariantBlock,
 	label: string,
 	parse: (source: string) => ParsedNote,
+	editor?: Editor,
 ): Promise<VariantMutationResult> {
 	const normalized = normalizeLabel(label);
 	const mapping = await processTarget(app, path, target, parse, (source, current) => {
 		if (!current.valid || !current.closing) {
 			throw new Error('Fix this variants block before deleting a variant.');
 		}
-		if (current.variants.length <= 2) {
-			throw new Error('A variants box must retain at least two variants.');
+		if (current.variants.length <= 1) {
+			throw new Error('A variants box must retain at least one variant.');
 		}
 		const variant = current.variants.find(
 			(candidate) => candidate.normalizedLabel === normalized,
@@ -96,7 +107,7 @@ export async function deleteVariant(
 			});
 		}
 		return applyEdits(source, edits);
-	});
+	}, editor);
 	return { ...mapping, label };
 }
 
@@ -105,6 +116,7 @@ export async function addStableBlockId(
 	path: string,
 	target: VariantBlock,
 	parse: (source: string) => ParsedNote,
+	editor?: Editor,
 ): Promise<StableIdMutationResult> {
 	let id = '';
 	const mapping = await processTarget(app, path, target, parse, (source, current) => {
@@ -116,7 +128,7 @@ export async function addStableBlockId(
 			? '\r\n'
 			: '\n';
 		return `${source.slice(0, insertion)}${lineBreak}^${id}${source.slice(insertion)}`;
-	});
+	}, editor);
 	return { id, ...mapping };
 }
 
@@ -125,8 +137,9 @@ export async function fixMissingClosers(
 	path: string,
 	target: VariantBlock,
 	parse: (source: string) => ParsedNote,
-): Promise<void> {
-	await processTarget(app, path, target, parse, (source, current) => {
+	editor?: Editor,
+): Promise<BlockIdentityMapping & SourceMutationResult> {
+	return processTarget(app, path, target, parse, (source, current) => {
 		if (current.range.to !== source.length || current.closing) {
 			throw new Error('This block no longer has an unambiguous missing final closer.');
 		}
@@ -136,7 +149,7 @@ export async function fixMissingClosers(
 		const lineBreak = source.includes('\r\n') ? '\r\n' : '\n';
 		const prefix = source.endsWith('\n') ? '' : lineBreak;
 		return `${source}${prefix}${missingVariant ? `${inner}${lineBreak}` : ''}${outer}`;
-	});
+	}, editor);
 }
 
 export async function updateBlockAttributes(
@@ -145,14 +158,15 @@ export async function updateBlockAttributes(
 	target: VariantBlock,
 	attributes: ContainerAttributes,
 	parse: (source: string) => ParsedNote,
-): Promise<BlockIdentityMapping> {
+	editor?: Editor,
+): Promise<BlockIdentityMapping & SourceMutationResult> {
 	return processTarget(app, path, target, parse, (source, current) => {
 		const opening = serializeContainerOpening(
 			current.opening.colonCount,
 			attributes,
 		);
 		return `${source.slice(0, current.opening.from)}${opening}${source.slice(current.opening.to)}`;
-	});
+	}, editor);
 }
 
 export async function renameVariant(
@@ -163,11 +177,11 @@ export async function renameVariant(
 	newLabel: string,
 	acrossNote: boolean,
 	parse: (source: string) => ParsedNote,
+	editor?: Editor,
 ): Promise<RenameMutationResult> {
 	const trimmed = validateNewLabel(newLabel);
-	const file = resolveFile(app, path);
-	let result: RenameMutationResult | undefined;
-	await app.vault.process(file, (source) => {
+	let result: Omit<RenameMutationResult, 'source'> | undefined;
+	const source = await processSource(app, path, editor, (source) => {
 		const parsed = parse(source);
 		const currentTarget = findCurrentBlock(parsed, target);
 		if (!currentTarget) throw new Error('The variants block changed. Reopen rename and try again.');
@@ -223,7 +237,7 @@ export async function renameVariant(
 		return changed;
 	});
 	if (!result) throw new Error('The rename did not complete.');
-	return result;
+	return { ...result, source };
 }
 
 function validateNewLabel(label: string): string {
@@ -246,10 +260,10 @@ async function processTarget(
 	target: VariantBlock,
 	parse: (source: string) => ParsedNote,
 	change: (source: string, current: VariantBlock) => string,
-): Promise<BlockIdentityMapping> {
-	const file = resolveFile(app, path);
+	editor?: Editor,
+): Promise<BlockIdentityMapping & SourceMutationResult> {
 	let mapping: BlockIdentityMapping | undefined;
-	await app.vault.process(file, (source) => {
+	const source = await processSource(app, path, editor, (source) => {
 		const parsed = parse(source);
 		const current = findCurrentBlock(parsed, target);
 		if (!current) throw new Error('The variants block changed. Try the action again.');
@@ -261,7 +275,57 @@ async function processTarget(
 		return changed;
 	});
 	if (!mapping) throw new Error('The variants block change did not complete.');
-	return mapping;
+	return { ...mapping, source };
+}
+
+async function processSource(
+	app: App,
+	path: string,
+	editor: Editor | undefined,
+	change: (source: string) => string,
+): Promise<string> {
+	if (editor) {
+		const source = editor.getValue();
+		const changed = change(source);
+		applyEditorChange(editor, source, changed);
+		return changed;
+	}
+	const file = resolveFile(app, path);
+	let changedSource: string | undefined;
+	await app.vault.process(file, (source) => {
+		changedSource = change(source);
+		return changedSource;
+	});
+	if (changedSource === undefined) {
+		throw new Error('The variants block change did not complete.');
+	}
+	return changedSource;
+}
+
+function applyEditorChange(editor: Editor, before: string, after: string): void {
+	if (before === after) return;
+	let prefix = 0;
+	const sharedLength = Math.min(before.length, after.length);
+	while (prefix < sharedLength && before[prefix] === after[prefix]) prefix += 1;
+	let suffix = 0;
+	while (
+		suffix < before.length - prefix &&
+		suffix < after.length - prefix &&
+		before[before.length - suffix - 1] === after[after.length - suffix - 1]
+	) {
+		suffix += 1;
+	}
+	runStructuralTransaction(() => {
+		editor.transaction({
+			changes: [
+				{
+					from: editor.offsetToPos(prefix),
+					to: editor.offsetToPos(before.length - suffix),
+					text: after.slice(prefix, after.length - suffix),
+				},
+			],
+		});
+	});
 }
 
 function findCurrentBlock(

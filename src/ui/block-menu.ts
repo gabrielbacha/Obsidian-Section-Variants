@@ -1,4 +1,4 @@
-import { Menu, Notice } from 'obsidian';
+import { Notice } from 'obsidian';
 import {
 	effectiveAuthoredLabel,
 	effectiveAuthoredView,
@@ -6,6 +6,7 @@ import {
 } from '../core/types';
 import { SectionVariantsHost } from '../plugin-host';
 import { BLOCK_MENU_ACTIONS } from './block-menu-actions';
+import { AttachedMenuItem, openAttachedMenu } from './attached-menu';
 
 export function openBlockMenu(
 	host: SectionVariantsHost,
@@ -13,78 +14,56 @@ export function openBlockMenu(
 	block: VariantBlock,
 	event: MouseEvent,
 ): void {
-	const menu = new Menu();
-	menu.addItem((item) =>
-		item.setTitle(BLOCK_MENU_ACTIONS[0]).setIcon('combine').onClick(() => {
-			const followed = host.store.followGlobalState(path, block);
-			if (!followed.label && !followed.view) {
-				new Notice('No compatible global label or global view is set.');
-			}
-		}),
-	);
-	menu.addItem((item) =>
-		item.setTitle(BLOCK_MENU_ACTIONS[1]).setIcon('rotate-ccw').onClick(() => {
-			host.store.resetBlock(path, block);
-		}),
-	);
-	menu.addSeparator();
-	menu.addItem((item) =>
-		item.setTitle(BLOCK_MENU_ACTIONS[2]).setIcon('settings-2').onClick(() => {
-			host.openBlockConfiguration(path, block);
-		}),
-	);
-	menu.addItem((item) =>
-		item.setTitle(BLOCK_MENU_ACTIONS[3]).setIcon('plus').onClick(() => {
-			host.openAddVariant(path, block);
-		}),
-	);
-	menu.addItem((item) =>
-		item
-			.setTitle(`${BLOCK_MENU_ACTIONS[4]} ›`)
-			.setIcon('trash-2')
-			.setDisabled(block.variants.length <= 2)
-			.setWarning(true)
-			.onClick((submenuEvent) => {
-				openVariantSubmenu(block, submenuEvent, (label) => {
-					host.openDeleteVariant(path, block, label);
-				});
-			}),
-	);
-	menu.addItem((item) =>
-		item
-			.setTitle(`${BLOCK_MENU_ACTIONS[5]} ›`)
-			.setIcon('text-cursor-input')
-			.onClick((submenuEvent) => {
-				openVariantSubmenu(block, submenuEvent, (label) => {
-					host.openRenameVariant(path, block, label);
-				});
-			}),
-	);
-	menu.showAtMouseEvent(event);
-}
-
-function openVariantSubmenu(
-	block: VariantBlock,
-	event: MouseEvent | KeyboardEvent,
-	onSelect: (label: string) => void,
-): void {
-	const submenu = new Menu();
-	for (const variant of block.variants) {
-		submenu.addItem((item) =>
-			item.setTitle(variant.label).onClick(() => onSelect(variant.label)),
-		);
-	}
-	const target = event.currentTarget as HTMLElement | null;
-	const rect = target?.getBoundingClientRect();
-	const mouseX = 'clientX' in event ? event.clientX : 0;
-	const mouseY = 'clientY' in event ? event.clientY : 0;
-	submenu.showAtPosition(
+	const origin = event.currentTarget as HTMLElement | null;
+	const renameItems: AttachedMenuItem[] = block.variants.map((variant) => ({
+		label: variant.label,
+		onSelect: () => host.openRenameVariant(path, block, variant.label, origin ?? undefined),
+	}));
+	const deleteItems: AttachedMenuItem[] = block.variants.map((variant) => ({
+		label: variant.label,
+		warning: true,
+		onSelect: () => host.openDeleteVariant(path, block, variant.label, origin ?? undefined),
+	}));
+	openAttachedMenu(event, [
 		{
-			x: mouseX || rect?.right || 0,
-			y: mouseY || rect?.top || 0,
+			label: BLOCK_MENU_ACTIONS[0],
+			icon: 'plus',
+			onSelect: () => host.openAddVariant(path, block, origin ?? undefined),
 		},
-		target?.ownerDocument,
-	);
+		{
+			label: BLOCK_MENU_ACTIONS[1],
+			icon: 'text-cursor-input',
+			children: renameItems,
+		},
+		{
+			label: BLOCK_MENU_ACTIONS[2],
+			icon: 'trash-2',
+			warning: true,
+			disabled: block.variants.length <= 1,
+			children: deleteItems,
+		},
+		{ label: '-' },
+		{
+			label: BLOCK_MENU_ACTIONS[3],
+			icon: 'settings-2',
+			onSelect: () => host.openBlockConfiguration(path, block, origin ?? undefined),
+		},
+		{
+			label: BLOCK_MENU_ACTIONS[4],
+			icon: 'combine',
+			onSelect: () => {
+				const followed = host.store.followGlobalState(path, block);
+				if (!followed.label && !followed.view) {
+					new Notice('No compatible global label or global view is set.');
+				}
+			},
+		},
+		{
+			label: BLOCK_MENU_ACTIONS[5],
+			icon: 'rotate-ccw',
+			onSelect: () => host.store.resetBlock(path, block),
+		},
+	]);
 }
 
 export function blockMarkerTooltip(

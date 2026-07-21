@@ -258,8 +258,14 @@ function validateBlock(
 	lines: string[],
 	lineOffsets: number[],
 ): void {
-	if (block.variants.length < 2) {
-		block.diagnostics.push(blockDiagnostic(block, 'fewer-than-two-variants', 'A variants block requires at least two variants.'));
+	if (block.variants.length === 0) {
+		block.diagnostics.push(
+			blockDiagnostic(
+				block,
+				'empty-variants-block',
+				'A variants block requires at least one variant.',
+			),
+		);
 	}
 	const seen = new Set<string>();
 	for (const variant of block.variants) {

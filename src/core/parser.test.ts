@@ -60,6 +60,15 @@ describe('parseNote', () => {
 		expect(parsed.blocks.every((block) => block.valid)).toBe(true);
 	});
 
+	it('keeps a temporary one-variant block valid', () => {
+		const block = parseNote(
+			[':::: variants', '::: Only', 'Content', ':::', '::::'].join('\n'),
+		).roots[0];
+
+		expect(block?.valid).toBe(true);
+		expect(block?.variants.map((variant) => variant.label)).toEqual(['Only']);
+	});
+
 	it('ignores div-looking lines inside code fences', () => {
 		const source = [
 			':::: variants',

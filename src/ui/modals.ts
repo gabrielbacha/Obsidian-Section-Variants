@@ -6,6 +6,8 @@ import {
 	ViewMode,
 } from '../core/types';
 import { errorMessage } from '../core/errors';
+import { LabelCatalogEntry } from '../core/labels';
+import { LabelInputSuggest } from './label-input-suggest';
 
 export class InsertVariantsModal extends Modal {
 	private name = '';
@@ -13,9 +15,11 @@ export class InsertVariantsModal extends Modal {
 	private defaultIndex = 0;
 	private view: ViewMode = 'toggle';
 	private errorEl?: HTMLElement;
+	private labelSuggests: LabelInputSuggest[] = [];
 
 	constructor(
 		app: App,
+		private readonly suggestions: readonly LabelCatalogEntry[],
 		private readonly onSubmit: (options: SerializeOptions) => void,
 	) {
 		super(app);
@@ -27,10 +31,12 @@ export class InsertVariantsModal extends Modal {
 	}
 
 	onClose(): void {
+		this.clearLabelSuggests();
 		this.contentEl.empty();
 	}
 
 	private render(): void {
+		this.clearLabelSuggests();
 		this.contentEl.empty();
 		this.contentEl.createEl('p', {
 			text: 'Add at least two unique labels. Labels with spaces are generated in explicit pandoc form.',
@@ -47,7 +53,7 @@ export class InsertVariantsModal extends Modal {
 
 		new Setting(this.contentEl).addButton((button) =>
 			button.setButtonText('Add variant').setIcon('plus').onClick(() => {
-				this.labels.push(nextLabel(this.labels.length));
+				this.labels.push(nextAvailableLabel(this.labels));
 				this.render();
 			}),
 		);
@@ -91,11 +97,26 @@ export class InsertVariantsModal extends Modal {
 	private renderLabelSetting(label: string, index: number): void {
 		new Setting(this.contentEl)
 			.setName(`Variant ${index + 1}`)
-			.addText((text) =>
+			.addText((text) => {
 				text.setValue(label).onChange((value) => {
 					this.labels[index] = value;
-				}),
-			)
+				});
+				this.labelSuggests.push(
+					new LabelInputSuggest(
+						this.app,
+						text.inputEl,
+						this.suggestions,
+						() => new Set(
+							this.labels
+								.filter((_item, itemIndex) => itemIndex !== index)
+								.map(normalizeLabel),
+						),
+						(value) => {
+							this.labels[index] = value;
+						},
+					),
+				);
+			})
 			.addExtraButton((button) =>
 				button
 					.setIcon('trash-2')
@@ -134,6 +155,11 @@ export class InsertVariantsModal extends Modal {
 
 	private showError(message: string): void {
 		this.errorEl?.setText(message);
+	}
+
+	private clearLabelSuggests(): void {
+		for (const suggest of this.labelSuggests) suggest.destroy();
+		this.labelSuggests = [];
 	}
 }
 
@@ -230,7 +256,7 @@ export class BlockConfigurationModal extends Modal {
 			)
 			.addButton((button) =>
 				button
-					.setButtonText('Save authored defaults')
+					.setButtonText('Save box')
 					.setCta()
 					.onClick(() => void this.submit()),
 			);
@@ -343,23 +369,38 @@ export class RenameVariantModal extends Modal {
 export class AddVariantModal extends Modal {
 	private label: string;
 	private errorEl?: HTMLElement;
+	private labelSuggest?: LabelInputSuggest;
 
 	constructor(
 		app: App,
 		private readonly block: VariantBlock,
+		private readonly suggestions: readonly LabelCatalogEntry[],
 		private readonly onSubmit: (label: string) => Promise<void>,
 	) {
 		super(app);
-		this.label = nextLabel(block.variants.length);
+		this.label = nextAvailableLabel(
+			block.variants.map((variant) => variant.label),
+		);
 	}
 
 	onOpen(): void {
 		this.setTitle('Add variant');
-		new Setting(this.contentEl).setName('Variant label').addText((text) =>
+		new Setting(this.contentEl).setName('Variant label').addText((text) => {
 			text.setValue(this.label).onChange((value) => {
 				this.label = value;
-			}),
-		);
+			});
+			this.labelSuggest = new LabelInputSuggest(
+				this.app,
+				text.inputEl,
+				this.suggestions,
+				() => new Set(
+					this.block.variants.map((variant) => variant.normalizedLabel),
+				),
+				(value) => {
+					this.label = value;
+				},
+			);
+		});
 		this.errorEl = this.contentEl.createDiv({ cls: 'section-variants-modal-error' });
 		this.errorEl.setAttribute('role', 'alert');
 		new Setting(this.contentEl)
@@ -375,6 +416,7 @@ export class AddVariantModal extends Modal {
 	}
 
 	onClose(): void {
+		this.labelSuggest?.destroy();
 		this.contentEl.empty();
 	}
 
@@ -448,4 +490,12 @@ export class DeleteVariantConfirmationModal extends Modal {
 
 function nextLabel(index: number): string {
 	return index < 26 ? String.fromCharCode(65 + index) : `Variant ${index + 1}`;
+}
+
+function nextAvailableLabel(labels: readonly string[]): string {
+	const used = new Set(labels.map(normalizeLabel));
+	for (let index = 0; ; index += 1) {
+		const label = nextLabel(index);
+		if (!used.has(normalizeLabel(label))) return label;
+	}
 }

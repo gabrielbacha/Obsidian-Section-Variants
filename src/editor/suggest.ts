@@ -6,7 +6,7 @@ import {
 	EditorSuggestTriggerInfo,
 	TFile,
 } from 'obsidian';
-import { normalizeLabel } from '../core/types';
+import { collectLabelCatalog, filterLabelCatalog } from '../core/labels';
 import { SectionVariantsHost } from '../plugin-host';
 
 interface Suggestion {
@@ -17,7 +17,6 @@ interface Suggestion {
 
 export class VariantsEditorSuggest extends EditorSuggest<Suggestion> {
 	private mode: Suggestion['type'] = 'label';
-	private recentLabels: string[] = [];
 
 	constructor(
 		private readonly host: SectionVariantsHost,
@@ -85,22 +84,11 @@ export class VariantsEditorSuggest extends EditorSuggest<Suggestion> {
 			];
 		}
 
-		const counts = new Map<string, { label: string; count: number }>();
-		for (const block of this.host.parse(context.editor.getValue()).blocks) {
-			for (const variant of block.variants) {
-				const existing = counts.get(variant.normalizedLabel);
-				if (existing) existing.count += 1;
-				else counts.set(variant.normalizedLabel, { label: variant.label, count: 1 });
-			}
-		}
-		const query = normalizeLabel(context.query);
-		return [...counts.values()]
-			.filter((entry) => normalizeLabel(entry.label).includes(query))
-			.sort((left, right) => {
-				const frequency = right.count - left.count;
-				if (frequency !== 0) return frequency;
-				return recentIndex(this.recentLabels, left.label) - recentIndex(this.recentLabels, right.label);
-			})
+		return filterLabelCatalog(
+			collectLabelCatalog(this.host.parse(context.editor.getValue()).blocks),
+			context.query,
+			new Set(),
+		)
 			.map((entry) => ({
 				type: 'label',
 				label: entry.label,
@@ -121,20 +109,7 @@ export class VariantsEditorSuggest extends EditorSuggest<Suggestion> {
 			this.openInsertModal(context.editor, context.start);
 		} else {
 			context.editor.replaceRange(suggestion.label, context.start, context.end);
-			this.recentLabels = [
-				suggestion.label,
-				...this.recentLabels.filter(
-					(label) => normalizeLabel(label) !== normalizeLabel(suggestion.label),
-				),
-			].slice(0, 20);
 		}
 		this.close();
 	}
-}
-
-function recentIndex(labels: string[], label: string): number {
-	const index = labels.findIndex(
-		(candidate) => normalizeLabel(candidate) === normalizeLabel(label),
-	);
-	return index < 0 ? Number.MAX_SAFE_INTEGER : index;
 }

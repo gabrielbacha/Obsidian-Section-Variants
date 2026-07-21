@@ -6,9 +6,12 @@
 - Repeatedly type, paste, press Enter, and undo in headings and at the first and last content positions; confirm the complete frame and toolbar never disappear. Repeat with blank variants and LF/CRLF notes in light and dark themes.
 - Confirm only the marker shows at rest on pointer devices; hover and keyboard focus reveal labels plus Toggle/Columns/Auto without clipping in narrow panes or at zoomed text sizes.
 - Confirm touch controls remain visible and at least 44px, long labels scroll safely, and reduced motion disables reveal animation.
-- Confirm marker tooltips are one line and the block menu offers **Follow global state**, **Reset to authored defaults**, **Configure box**, **Add variant**, **Delete variant**, and **Rename variant**.
-- Give a box a name during insertion and through **Configure box**; verify it renders once above its variants in Toggle, Columns, Reading View, Live Preview, and HTML export.
-- Add variants with shorthand-safe and punctuation-bearing labels. Rename by choosing the target from the secondary menu and confirming the new label. Delete by choosing the target from the secondary menu and accepting the destructive confirmation; verify deletion is disabled when only two variants remain.
+- Confirm the menu order is **Add variant**, **Rename variant**, **Delete variant**, separator, **Configure box**, **Follow global state**, and **Reset to authored defaults**.
+- Hover and keyboard-focus Rename/Delete; verify their variant submenus open without a click, touch the parent menu, flip inside narrow/pop-out viewports, support arrow keys/Escape, and remain 44px on mobile.
+- Give a box a name during insertion and through **Configure box**; verify **Save box** writes it immediately, clearing it removes the attribute, and other authored settings remain unchanged. Confirm it renders once above its variants in Toggle, Columns, Reading View, Live Preview, and HTML export.
+- Add variants with shorthand-safe and punctuation-bearing labels. Rename by choosing the target from the attached submenu and confirming the new label. Delete from two variants down to one and confirm the box remains rendered and editable; verify deletion is disabled only for the final variant.
+- In Insert/Add dialogs, focus every label field and verify current-note suggestions appear frequency-first, filter case-insensitively, preserve authored casing, and exclude labels already present in that box.
+- Add, rename, delete, and configure a box from Live Preview and Reading View; verify every change appears immediately without reloading and one Undo reverses it.
 - Verify the note-wide control sits above Obsidian's actual status bar, stays inside bottom/right safe areas, and expands left. Resize and show/hide the status bar in main and pop-out windows.
 
 ## Formatted Live Preview editing

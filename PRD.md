@@ -215,13 +215,13 @@ Behavior:
 - `Shift + click` applies the label to every matching block in the note
 - the hover/focus surface exposes toggle, columns, and auto view modes
 - the marker menu contains:
+  - add variant
+  - rename variant, with an attached hover/focus target submenu and confirmation
+  - delete variant, with an attached hover/focus target submenu and destructive confirmation
+  - box name and authored-default configuration
   - follow global state
   - reset to authored defaults
-  - box name and authored-default configuration
-  - add variant
-  - delete variant, followed by variant selection and destructive confirmation
-  - rename variant, followed by variant selection and rename confirmation
-- a block always retains at least two variants
+- a block may temporarily retain one variant; deleting the final variant is disabled
 - focused-block commands provide column visibility persistence, restoration, and stable-ID creation
 
 The controls:
@@ -230,6 +230,8 @@ The controls:
 - reveal labels and views on hover or keyboard focus on hover-capable devices
 - keep labels and 44px targets available on touch devices
 - use theme-native neutral states rather than accent-filled selection pills
+
+Structural actions originating in an open Markdown view commit through one editor transaction so Live Preview, Reading View, undo/redo, and the saved note agree immediately. Atomic vault processing is the fallback for a note without an open editor.
 
 ## 9. Note-wide control
 
@@ -364,7 +366,7 @@ Labels are unrestricted and may contain spaces.
 Autocomplete suggests labels already used in the current note, ranked by:
 
 1. frequency
-2. recent use
+2. first authored appearance
 
 Labels are matched case-insensitively for global actions.
 
@@ -478,7 +480,6 @@ Possible errors include:
 - invalid attribute
 - invalid nesting
 - empty variants block
-- fewer than two variants
 
 ## 20. Export behavior
 

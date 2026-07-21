@@ -7,10 +7,20 @@ export interface SectionVariantsHost {
 	store: StateStore;
 	parse(source: string): ParsedNote;
 	refreshAllViews(path?: string): void;
-	openBlockConfiguration(path: string, block: VariantBlock): void;
-	openAddVariant(path: string, block: VariantBlock): void;
-	openDeleteVariant(path: string, block: VariantBlock, label: string): void;
-	openRenameVariant(path: string, block: VariantBlock, label: string): void;
+	openBlockConfiguration(path: string, block: VariantBlock, origin?: HTMLElement): void;
+	openAddVariant(path: string, block: VariantBlock, origin?: HTMLElement): void;
+	openDeleteVariant(
+		path: string,
+		block: VariantBlock,
+		label: string,
+		origin?: HTMLElement,
+	): void;
+	openRenameVariant(
+		path: string,
+		block: VariantBlock,
+		label: string,
+		origin?: HTMLElement,
+	): void;
 	ensurePersistentIdentity(
 		path: string,
 		block: VariantBlock,

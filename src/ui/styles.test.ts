@@ -17,6 +17,18 @@ describe('presentation safety selectors', () => {
 	);
 	});
 
+	it('keeps attached context submenus viewport-positioned and touch accessible', () => {
+		expect(CSS).toMatch(
+			/\.section-variants-context-menu\s*\{[^}]*position:\s*fixed;[^}]*z-index:/su,
+		);
+		expect(CSS).toMatch(
+			/body\.is-mobile \.section-variants-context-menu-item\s*\{[^}]*min-height:\s*44px;/su,
+		);
+		expect(CSS).not.toMatch(
+			/\.section-variants-context-menu[^}]*transition:/su,
+		);
+	});
+
 	it('uses one stable inner frame without a redundant outer border', () => {
 		expect(CSS).toMatch(
 			/\.section-variants-root\s*\{[^}]*border:\s*0/su,

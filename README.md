@@ -36,7 +36,7 @@ The canonical container is `variants`. Additional aliases can be enabled in **Se
 
 - Hover or focus a bordered block to reveal its label and Toggle/Columns/Auto controls.
 - Shift-select a label to apply it to every matching block in the note.
-- Open the small layers marker to configure or name the box, add a variant, or choose a variant to rename or delete. Deletion always requires confirmation and a box always retains at least two variants.
+- Open the small layers marker for **Add variant**, **Rename variant**, and **Delete variant**, followed by box and state settings. Rename/Delete submenus open while hovering or focusing and stay attached to their parent item. Deletion always requires confirmation; a box may temporarily contain one variant, but the final variant cannot be deleted.
 - Hide individual columns temporarily and explicitly save visibility when wanted.
 - Use the copy action in any variant header to copy that variant's exact Markdown content without its outer fences.
 - Use the bottom-right note control to apply labels or views across a note. It measures the current Obsidian status bar and stays above it, including in pop-out windows.
@@ -55,13 +55,15 @@ Three insertion paths open the same configuration dialog:
 
 Typing a variant opener inside an existing block also suggests labels already used in the note.
 
+Variant fields in both **Insert variants block** and **Add variant** autocomplete labels from valid blocks in the current note. Suggestions preserve authored casing, rank frequent labels first, and exclude labels already used in the box being edited.
+
 ## State and safety
 
 Authored defaults remain in Markdown. Current selections, view choices, sticky-control state, and explicitly saved column visibility live in plugin data. Ordinary switching never rewrites the note.
 
 **Reset this block** follows its authored label and view even when note-wide state exists; later authored edits are still picked up. **Follow global state** removes both local choices and authored-reset markers, using the note-wide label when compatible and the note-wide view when present. Stable-ID creation and label renames migrate existing selections, hidden columns, edit state, and affected note-wide labels to the new identity.
 
-Inactive variants are hidden in Live Preview. Each valid block is one stable framed widget, so its toolbar and complete border remain attached while its Live Preview-formatted content updates. While editing a visible variant, the plugin prevents Backspace, Delete, selections, paste, and other editor transactions from crossing its hidden fences. Switch to Source mode whenever you intend to edit the structure itself.
+Inactive variants are hidden in Live Preview. Each valid block is one stable framed widget, so its toolbar and complete border remain attached while its Live Preview-formatted content updates. Menu-driven structural changes use the open note's editor transaction, appearing immediately and participating in normal undo/redo; closed notes use an atomic vault update. While editing a visible variant, the plugin prevents Backspace, Delete, selections, paste, and other editor transactions from crossing its hidden fences. Switch to Source mode whenever you intend to edit the structure itself.
 
 Blocks use an explicit Pandoc ID, a following Obsidian block ID, or a structural fingerprint for persistence. If duplicate fingerprints become ambiguous, use **Add stable block ID** or enable automatic IDs.
 

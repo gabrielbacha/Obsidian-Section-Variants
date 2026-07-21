@@ -38,8 +38,16 @@ export class ReadingViewCoordinator {
 	private readonly scheduledRoots = new WeakSet<HTMLElement>();
 	private readonly rootStates = new WeakMap<HTMLElement, RootState>();
 	private readonly processedOpenings = new WeakSet<HTMLElement>();
+	private readonly renderers = new Map<string, Set<VariantBlockRenderer>>();
 
 	constructor(private readonly host: SectionVariantsHost) {}
+
+	rebind(path: string, source: string): void {
+		const renderers = this.renderers.get(path);
+		if (!renderers) return;
+		const blocks = this.host.parse(source).blocks;
+		for (const renderer of renderers) renderer.rebind(source, blocks);
+	}
 
 	postProcess(el: HTMLElement, context: MarkdownPostProcessorContext): void {
 		if (el.closest('.section-variants-root')) return;
@@ -155,15 +163,34 @@ export class ReadingViewCoordinator {
 				continue;
 			}
 			this.processedOpenings.add(opening.element);
-			const renderer = new VariantBlockRenderer(
+			let renderer: VariantBlockRenderer;
+			renderer = new VariantBlockRenderer(
 				this.host,
 				mount,
 				sourcePath,
 				source,
 				block,
+				() => this.untrackRenderer(sourcePath, renderer),
 			);
+			this.trackRenderer(sourcePath, renderer);
 			opening.context.addChild(renderer);
 		}
+	}
+
+	private trackRenderer(path: string, renderer: VariantBlockRenderer): void {
+		let renderers = this.renderers.get(path);
+		if (!renderers) {
+			renderers = new Set();
+			this.renderers.set(path, renderers);
+		}
+		renderers.add(renderer);
+	}
+
+	private untrackRenderer(path: string, renderer: VariantBlockRenderer): void {
+		const renderers = this.renderers.get(path);
+		if (!renderers) return;
+		renderers.delete(renderer);
+		if (renderers.size === 0) this.renderers.delete(path);
 	}
 
 	private renderWarning(

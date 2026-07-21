@@ -124,7 +124,9 @@ describe('state model', () => {
 	});
 
 	it('excludes invalid blocks from global result counts and mutations', () => {
-		const parsed = parseNote(`${SOURCE}\n\n:::: variants\n::: A\nOnly one\n:::\n::::`);
+		const parsed = parseNote(
+			`${SOURCE}\n\n:::: variants\n::: A\nOne\n:::\n::: a\nDuplicate\n:::\n::::`,
+		);
 		const invalid = parsed.blocks.at(-1)!;
 		const note = createNoteState();
 		ensureBlockState(note, invalid.identityKey).labelMode = 'authored';

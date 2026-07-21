@@ -17,6 +17,7 @@ import {
 	renameVariant,
 	updateBlockAttributes,
 } from './core/mutations';
+import { collectLabelCatalog } from './core/labels';
 import { parseNote } from './core/parser';
 import { serializeVariantsBlock } from './core/serializer';
 import { ParsedNote, VariantBlock } from './core/types';
@@ -25,6 +26,7 @@ import {
 	refreshLivePreviewEditors,
 } from './editor/live-preview';
 import { VariantsEditorSuggest } from './editor/suggest';
+import { chooseMutationEditor } from './editor/mutation-target';
 import { HtmlExportModal } from './export/html-export';
 import { SectionVariantsHost } from './plugin-host';
 import { ReadingViewCoordinator } from './reading/coordinator';
@@ -155,20 +157,28 @@ export default class SectionVariantsPlugin
 	}
 
 	openInsertModal(editor: Editor, position: EditorPosition): void {
-		new InsertVariantsModal(this.app, (options) => {
-			try {
-				const serialized = serializeVariantsBlock(options);
-				editor.replaceRange(serialized.markdown, position);
-				const insertionOffset =
-					editor.posToOffset(position) + serialized.firstContentOffset;
-				editor.setCursor(editor.offsetToPos(insertionOffset));
-			} catch (error) {
-				new Notice(errorMessage(error));
-			}
-		}).open();
+		new InsertVariantsModal(
+			this.app,
+			collectLabelCatalog(this.parse(editor.getValue()).blocks),
+			(options) => {
+				try {
+					const serialized = serializeVariantsBlock(options);
+					editor.replaceRange(serialized.markdown, position);
+					const insertionOffset =
+						editor.posToOffset(position) + serialized.firstContentOffset;
+					editor.setCursor(editor.offsetToPos(insertionOffset));
+				} catch (error) {
+					new Notice(errorMessage(error));
+				}
+			},
+		).open();
 	}
 
-	openBlockConfiguration(path: string, block: VariantBlock): void {
+	openBlockConfiguration(
+		path: string,
+		block: VariantBlock,
+		origin?: HTMLElement,
+	): void {
 		new BlockConfigurationModal(this.app, block, async (attributes) => {
 			const mapping = await updateBlockAttributes(
 				this.app,
@@ -176,28 +186,41 @@ export default class SectionVariantsPlugin
 				block,
 				attributes,
 				(source) => this.parseFresh(source),
+				this.resolveEditor(path, origin),
 			);
 			this.store.rekeyBlockState(path, mapping.before, mapping.after);
+			this.refreshAfterSourceMutation(path, mapping.source);
 			await this.store.flush();
 		}).open();
 	}
 
-	openAddVariant(path: string, block: VariantBlock): void {
-		new AddVariantModal(this.app, block, async (label) => {
+	openAddVariant(path: string, block: VariantBlock, origin?: HTMLElement): void {
+		const initialEditor = this.resolveEditor(path, origin);
+		const suggestions = collectLabelCatalog(
+			this.parse(initialEditor?.getValue() ?? '').blocks,
+		);
+		new AddVariantModal(this.app, block, suggestions, async (label) => {
 			const result = await addVariant(
 				this.app,
 				path,
 				block,
 				label,
 				(source) => this.parseFresh(source),
+				this.resolveEditor(path, origin),
 			);
 			this.store.rekeyBlockState(path, result.before, result.after);
+			this.refreshAfterSourceMutation(path, result.source);
 			await this.store.flush();
 			new Notice(`Added ${result.label}.`);
 		}).open();
 	}
 
-	openDeleteVariant(path: string, block: VariantBlock, label: string): void {
+	openDeleteVariant(
+		path: string,
+		block: VariantBlock,
+		label: string,
+		origin?: HTMLElement,
+	): void {
 		new DeleteVariantConfirmationModal(this.app, label, async () => {
 			const result = await deleteVariant(
 				this.app,
@@ -205,6 +228,7 @@ export default class SectionVariantsPlugin
 				block,
 				label,
 				(source) => this.parseFresh(source),
+				this.resolveEditor(path, origin),
 			);
 			this.store.migrateDeletedVariant(
 				path,
@@ -212,12 +236,18 @@ export default class SectionVariantsPlugin
 				result.after,
 				result.label,
 			);
+			this.refreshAfterSourceMutation(path, result.source);
 			await this.store.flush();
 			new Notice(`Deleted ${result.label}.`);
 		}).open();
 	}
 
-	openRenameVariant(path: string, block: VariantBlock, label: string): void {
+	openRenameVariant(
+		path: string,
+		block: VariantBlock,
+		label: string,
+		origin?: HTMLElement,
+	): void {
 		new RenameVariantModal(
 			this.app,
 			label,
@@ -230,6 +260,7 @@ export default class SectionVariantsPlugin
 					newLabel,
 					acrossNote,
 					(source) => this.parseFresh(source),
+					this.resolveEditor(path, origin),
 				);
 				this.store.migrateRenamedLabels(
 					path,
@@ -238,6 +269,7 @@ export default class SectionVariantsPlugin
 					result.newLabel,
 					result.acrossNote,
 				);
+				this.refreshAfterSourceMutation(path, result.source);
 				await this.store.flush();
 			},
 		).open();
@@ -251,10 +283,15 @@ export default class SectionVariantsPlugin
 			return block;
 		}
 		try {
-			const result = await addStableBlockId(this.app, path, block, (source) =>
-				this.parseFresh(source),
+			const result = await addStableBlockId(
+				this.app,
+				path,
+				block,
+				(source) => this.parseFresh(source),
+				this.resolveEditor(path),
 			);
 			this.store.rekeyBlockState(path, result.before, result.after);
+			this.refreshAfterSourceMutation(path, result.source);
 			await this.store.flush();
 			return result.after;
 		} catch (error) {
@@ -270,8 +307,10 @@ export default class SectionVariantsPlugin
 				path,
 				block,
 				(source) => this.parseFresh(source),
+				this.resolveEditor(path),
 			);
 			this.store.rekeyBlockState(path, result.before, result.after);
+			this.refreshAfterSourceMutation(path, result.source);
 			await this.store.flush();
 			new Notice(`Added block ID ^${result.id}.`);
 		} catch (error) {
@@ -281,12 +320,14 @@ export default class SectionVariantsPlugin
 
 	async fixBlock(path: string, block: VariantBlock): Promise<void> {
 		try {
-			await fixMissingClosers(
+			const result = await fixMissingClosers(
 				this.app,
 				path,
 				block,
 				(source) => this.parseFresh(source),
+				this.resolveEditor(path),
 			);
+			this.refreshAfterSourceMutation(path, result.source);
 			new Notice('Added the missing closing fence.');
 		} catch (error) {
 			new Notice(errorMessage(error));
@@ -304,6 +345,32 @@ export default class SectionVariantsPlugin
 
 	private parseFresh(source: string): ParsedNote {
 		return parseNote(source, this.store.settings.aliases);
+	}
+
+	private resolveEditor(path: string, origin?: HTMLElement): Editor | undefined {
+		const views = this.app.workspace
+			.getLeavesOfType('markdown')
+			.map((leaf) => leaf.view)
+			.filter(
+				(view): view is MarkdownView =>
+					view instanceof MarkdownView && view.file?.path === path,
+			);
+		const active = this.app.workspace.getActiveViewOfType(MarkdownView);
+		return chooseMutationEditor(
+			views.map((view) => ({
+				editor: view.editor,
+				containsOrigin: origin ? view.containerEl.contains(origin) : false,
+				sameDocument: origin
+					? view.containerEl.ownerDocument === origin.ownerDocument
+					: false,
+				active: view === active,
+			})),
+		);
+	}
+
+	private refreshAfterSourceMutation(path: string, source: string): void {
+		this.readingCoordinator.rebind(path, source);
+		this.refreshAllViews(path);
 	}
 
 	private scheduleViewRefresh(path?: string): void {

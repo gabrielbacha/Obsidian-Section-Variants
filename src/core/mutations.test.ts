@@ -7,11 +7,51 @@ import {
 	deleteVariant,
 	fixMissingClosers,
 	renameVariant,
+	updateBlockAttributes,
 } from './mutations';
 import { parseNote } from './parser';
 import { ParsedNote, VariantBlock } from './types';
 
 const parse = (source: string): ParsedNote => parseNote(source, []);
+
+class FakeEditor {
+	transactionCount = 0;
+
+	constructor(private content: string) {}
+
+	getValue(): string {
+		return this.content;
+	}
+
+	offsetToPos(offset: number): { line: number; ch: number } {
+		const before = this.content.slice(0, offset);
+		const lines = before.split('\n');
+		return { line: lines.length - 1, ch: lines.at(-1)?.length ?? 0 };
+	}
+
+	transaction(transaction: {
+		changes?: Array<{
+			from: { line: number; ch: number };
+			to: { line: number; ch: number };
+			text: string;
+		}>;
+	}): void {
+		this.transactionCount += 1;
+		for (const change of [...(transaction.changes ?? [])].reverse()) {
+			const from = this.positionToOffset(change.from);
+			const to = this.positionToOffset(change.to);
+			this.content = `${this.content.slice(0, from)}${change.text}${this.content.slice(to)}`;
+		}
+	}
+
+	private positionToOffset(position: { line: number; ch: number }): number {
+		const lines = this.content.split('\n');
+		return (
+			lines.slice(0, position.line).reduce((length, line) => length + line.length + 1, 0) +
+			position.ch
+		);
+	}
+}
 
 function setup(content: string): {
 	app: App;
@@ -215,6 +255,81 @@ describe('addVariant', () => {
 			addVariant(app, path, firstBlock(), 'a', parse),
 		).rejects.toThrow(/already exists/iu);
 	});
+
+	it('updates an open editor in one transaction instead of the vault copy', async () => {
+		const { app, path, read, firstBlock } = setup(TWO_VARIANTS);
+		const editor = new FakeEditor(read());
+
+		const result = await addVariant(
+			app,
+			path,
+			firstBlock(),
+			'C',
+			parse,
+			editor as never,
+		);
+
+		expect(editor.transactionCount).toBe(1);
+		expect(parse(editor.getValue()).blocks[0]?.variants).toHaveLength(3);
+		expect(result.source).toBe(editor.getValue());
+		expect(read()).toBe(TWO_VARIANTS);
+	});
+
+	it('preserves CRLF while updating an open editor', async () => {
+		const source = TWO_VARIANTS.replace(/\n/gu, '\r\n');
+		const { app, path, read, firstBlock } = setup(source);
+		const editor = new FakeEditor(read());
+
+		await addVariant(app, path, firstBlock(), 'C', parse, editor as never);
+
+		expect(editor.getValue()).toContain('::: C\r\n\r\n:::\r\n::::');
+		expect(editor.getValue().replace(/\r\n/gu, '')).not.toContain('\n');
+	});
+});
+
+describe('updateBlockAttributes', () => {
+	it('persists a box name through the open editor while preserving attributes', async () => {
+		const source = TWO_VARIANTS.replace(
+			':::: variants',
+			':::: {.variants #copy view="columns" widths="40% 60%"}',
+		);
+		const { app, path, read, firstBlock } = setup(source);
+		const editor = new FakeEditor(read());
+		const block = firstBlock();
+
+		const result = await updateBlockAttributes(
+			app,
+			path,
+			block,
+			{ ...block.attributes, name: 'Homepage copy' },
+			parse,
+			editor as never,
+		);
+
+		expect(editor.transactionCount).toBe(1);
+		expect(result.after.attributes).toMatchObject({
+			id: 'copy',
+			name: 'Homepage copy',
+			view: 'columns',
+			widths: '40% 60%',
+		});
+		expect(read()).toBe(source);
+
+		const cleared = await updateBlockAttributes(
+			app,
+			path,
+			result.after,
+			{ ...result.after.attributes, name: undefined },
+			parse,
+			editor as never,
+		);
+		expect(cleared.after.attributes.name).toBeUndefined();
+		expect(cleared.after.attributes).toMatchObject({
+			id: 'copy',
+			view: 'columns',
+			widths: '40% 60%',
+		});
+	});
 });
 
 describe('deleteVariant', () => {
@@ -244,11 +359,16 @@ describe('deleteVariant', () => {
 		expect(parse(read()).blocks[0]?.attributes.defaultLabel).toBeUndefined();
 	});
 
-	it('refuses to leave fewer than two variants', async () => {
+	it('allows one temporary variant but refuses to delete the last one', async () => {
 		const { app, path, firstBlock } = setup(TWO_VARIANTS);
 
+		const result = await deleteVariant(app, path, firstBlock(), 'A', parse);
+
+		expect(result.after.valid).toBe(true);
+		expect(result.after.variants.map((variant) => variant.label)).toEqual(['B']);
+
 		await expect(
-			deleteVariant(app, path, firstBlock(), 'A', parse),
-		).rejects.toThrow(/at least two/iu);
+			deleteVariant(app, path, result.after, 'B', parse),
+		).rejects.toThrow(/at least one/iu);
 	});
 });

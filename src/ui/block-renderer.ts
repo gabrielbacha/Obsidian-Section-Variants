@@ -13,6 +13,7 @@ import {
 	VariantSection,
 } from '../core/types';
 import { SectionVariantsHost } from '../plugin-host';
+import { findReboundBlock } from '../reading/rebind';
 import { createBlockControls } from './block-controls';
 import { syncColumnSeparators } from './column-layout';
 import { hasRoomForColumns, resolveLengthPx } from './css-length';
@@ -30,8 +31,9 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 		private readonly host: SectionVariantsHost,
 		containerEl: HTMLElement,
 		private readonly sourcePath: string,
-		private readonly source: string,
-		private readonly block: VariantBlock,
+		private source: string,
+		private block: VariantBlock,
+		private readonly onDispose?: () => void,
 	) {
 		super(containerEl);
 	}
@@ -64,6 +66,16 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 		this.unsubscribe?.();
 		this.resizeObserver?.disconnect();
 		this.clearRenderComponent();
+		this.onDispose?.();
+	}
+
+	rebind(source: string, blocks: readonly VariantBlock[]): void {
+		const previousBlocks = this.host.parse(this.source).blocks;
+		const next = findReboundBlock(previousBlocks, this.block, blocks);
+		if (!next?.valid) return;
+		this.source = source;
+		this.block = next;
+		void this.render();
 	}
 
 	private async render(): Promise<void> {

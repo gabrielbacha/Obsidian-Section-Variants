@@ -39,6 +39,7 @@ import {
 	editableSpansForVariant,
 } from './edit-boundaries';
 import { blockSpan } from './ranges';
+import { isStructuralTransaction } from '../core/structural-transaction';
 import { isNoteWideSelection } from './interactions';
 import { InlineColumnEditor } from './inline-column-editor';
 import { liveEditableVariants } from './live-variants';
@@ -162,6 +163,7 @@ export function createLivePreviewExtension(
 		editorWidthField,
 		EditorState.changeFilter.of((transaction) => {
 			if (!transaction.docChanged) return true;
+			if (isStructuralTransaction()) return true;
 			// Vault/process updates and plugin mutations are unannotated and may
 			// intentionally change structure. Guard only editor-originated input,
 			// deletion, history, completion, paste, cut, and drop transactions.
