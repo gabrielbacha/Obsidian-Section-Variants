@@ -26,6 +26,12 @@ describe('presentation safety selectors', () => {
 		);
 	});
 
+	it('gives the global all-columns toggle a 44px touch target', () => {
+		expect(CSS).toMatch(
+			/body\.is-mobile \.section-variants-add-variant,[\s\S]*section-variants-toggle-all-columns\s*\{[^}]*min-width:\s*44px/su,
+		);
+	});
+
 	it('keeps attached context submenus viewport-positioned and touch accessible', () => {
 		expect(CSS).toMatch(
 			/\.section-variants-context-menu\s*\{[^}]*position:\s*fixed;[^}]*z-index:/su,

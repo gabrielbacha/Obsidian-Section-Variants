@@ -264,6 +264,10 @@ export default class SectionVariantsPlugin
 		);
 		this.store.rekeyBlockState(path, mapping.before, mapping.after);
 		this.refreshAfterSourceMutation(path, mapping.source);
+		// Obsidian may publish its editor-change event after the structural
+		// transaction returns. Re-dispatch once on the next turn so decorations
+		// cannot retain a widget built from the pre-mutation document.
+		this.scheduleViewRefresh(path);
 		await this.store.flush();
 	}
 

@@ -38,7 +38,7 @@ The canonical container is `variants`. Additional aliases can be enabled in **Se
 - Open the small layers marker for **Add variant**, **Rename variant**, and **Delete variant**, followed by box and state settings. Rename/Delete submenus open while hovering or focusing and stay attached to their parent item. Deletion always requires confirmation; a box may temporarily contain one variant, but the final variant cannot be deleted.
 - Hide individual columns temporarily and explicitly save visibility when wanted.
 - Use the copy action in any variant header to copy that variant's exact Markdown content without its outer fences.
-- Use the bottom-right note control to apply labels or views across a note. In Columns view, its label buttons show or hide that column across every matching box: fully visible toggles off, while mixed or hidden toggles on. The control measures the current Obsidian status bar and stays above it, including in pop-out windows.
+- Use the bottom-right note control to apply labels or views across a note. In Columns view, its label buttons show or hide that column across every matching box, and the eye toggle hides every column or restores all of them at once. The control measures the current Obsidian status bar and stays above it, including in pop-out windows.
 - In Live Preview, Toggle content and every visible Columns panel are directly editable with Obsidian's normal Live Preview formatting. In Columns view, the A/B label controls show or hide their matching columns. Links, checkboxes, embeds, buttons, and nested controls keep their normal behavior.
 - Source Mode always displays the complete Markdown source.
 
@@ -58,7 +58,7 @@ Variant fields in both **Insert variants block** and **Add variant** autocomplet
 
 Legacy notes containing `view="auto"` remain valid and use responsive Columns. Auto is no longer offered for new blocks because Columns already wraps according to the available width.
 
-The block context menu owns box configuration directly: **Box name** contains an inline text field, while **Authored default**, **Authored view**, and **Narrow-screen layout** use checked attached submenus. **Edit column relative widths** is the only box-configuration dialog and presents one positive ratio per current variant; equal values split the box evenly. Wrap is the default narrow-screen layout. Legacy CSS `widths` and `min-width` attributes remain readable but are no longer exposed in the UI.
+The block context menu owns box configuration directly: **Box name** contains an inline text field, while **Authored default**, **Authored view**, and **Narrow-screen layout** use checked attached submenus that stay open while choices are applied. Each structural choice updates the open view immediately. **Edit column relative widths** is the only box-configuration dialog and presents one positive ratio per current variant; equal values split the box evenly. Wrap is the default narrow-screen layout. Legacy CSS `widths` and `min-width` attributes remain readable but are no longer exposed in the UI.
 
 ## State and safety
 

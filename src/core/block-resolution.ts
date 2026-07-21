@@ -19,15 +19,19 @@ export function resolveCurrentBlock(
 		(candidate) => candidate.identityKey === target.identityKey,
 	);
 	if (exact) return exact;
-	const positioned = candidates.find(
-		(candidate) =>
-			candidate.opening.from === target.opening.from &&
-			candidate.opening.text === target.opening.text,
-	);
-	if (positioned) return positioned;
 	const targetLabels = new Set(
 		target.variants.map((variant) => variant.normalizedLabel),
 	);
+	const positioned = candidates.filter(
+		(candidate) =>
+			candidate.opening.from === target.opening.from &&
+			[...targetLabels].every((label) =>
+				candidate.variants.some(
+					(variant) => variant.normalizedLabel === label,
+				),
+			),
+	);
+	if (positioned.length === 1) return positioned[0];
 	const structural = candidates.filter(
 		(candidate) =>
 			candidate.opening.text === target.opening.text &&

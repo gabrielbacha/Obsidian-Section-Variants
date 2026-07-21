@@ -1,4 +1,10 @@
-import { MarkdownView, Menu, Notice } from 'obsidian';
+import {
+	MarkdownView,
+	Menu,
+	Notice,
+	setIcon,
+	setTooltip,
+} from 'obsidian';
 import { normalizeLabel, ViewMode } from '../core/types';
 import { unionLabels } from '../core/labels';
 import { SectionVariantsHost } from '../plugin-host';
@@ -146,6 +152,27 @@ export class StickyControlManager {
 				);
 			},
 		});
+		if (columnsMode) {
+			const hasHiddenColumn = blocks.some((block) =>
+				block.variants.some((variant) =>
+					states.get(block)?.hiddenLabels.has(variant.normalizedLabel),
+				),
+			);
+			const action = hasHiddenColumn ? 'Show all columns' : 'Hide all columns';
+			const toggleAll = reveal.createEl('button', {
+				type: 'button',
+				cls: 'clickable-icon section-variants-toggle-all-columns',
+				attr: {
+					'aria-label': action,
+					'aria-pressed': String(!hasHiddenColumn),
+				},
+			});
+			setIcon(toggleAll, hasHiddenColumn ? 'eye' : 'eye-off');
+			setTooltip(toggleAll, action);
+			toggleAll.addEventListener('click', () => {
+				this.host.store.toggleAllColumnsAcrossNote(path, parsed);
+			});
+		}
 		createSegmentedControl(reveal, {
 			cls: 'section-variants-view-modes',
 			ariaLabel: 'Apply view across note',

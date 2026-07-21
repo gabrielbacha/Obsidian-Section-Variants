@@ -8,6 +8,7 @@
 - Confirm touch controls remain visible and at least 44px, long labels scroll safely, and reduced motion disables reveal animation.
 - Confirm the menu order is **Add variant**, **Rename variant**, **Delete variant**, separator, **Box name**, **Authored default**, **Authored view**, **Edit column relative widths**, **Narrow-screen layout**, separator, **Follow global state**, and **Reset to authored defaults**.
 - Hover or focus **Narrow-screen layout** and confirm its attached submenu checks exactly one of **Wrap into rows**, **Stack vertically**, and **Scroll horizontally**. Change each option and verify the open note updates immediately and Undo restores the previous source.
+- Select several choices in **Authored default**, **Authored view**, and **Narrow-screen layout** without dismissing the menu. Confirm each submenu remains attached, moves its check immediately, and the rendered block changes without reloading. Move between submenus and verify their latest checks are retained.
 - Confirm **Follow global state** has an obvious right-aligned checkbox in both states—empty when off and accent-filled with a tick when on. Turn it off, change the note-wide state, and verify the block remains frozen locally; turn it on again and verify the block resumes following.
 - Hover and keyboard-focus Rename/Delete; verify their variant submenus open without a click, touch the parent menu, flip inside narrow/pop-out viewports, support arrow keys/Escape, and remain 44px on mobile.
 - Give a box a name during insertion and through the inline **Box name** submenu field; verify Enter writes it immediately, clearing the field removes the attribute, and other authored settings remain unchanged. Change **Authored default** and **Authored view** from their checked submenus. Confirm the name aligns with the controls without creating unused grid tracks.
@@ -18,6 +19,7 @@
 - Add, rename, delete, and configure a box from Live Preview and Reading View; verify every change appears immediately without reloading and one Undo reverses it.
 - Verify the note-wide control sits above Obsidian's actual status bar, stays inside bottom/right safe areas, and expands left. Resize and show/hide the status bar in main and pop-out windows.
 - Put every box in Columns view and use the note-wide label buttons. Confirm a fully visible label hides in every matching box, a mixed/hidden label becomes visible everywhere, and boxes without that label are unchanged.
+- In note-wide Columns view, use the eye toggle to hide every column in every valid box. Confirm it changes to **Show all columns**, restores all columns on the next click, clears active inline editors when hiding, and remains a 44px touch target on mobile.
 
 ## Formatted Live Preview editing
 

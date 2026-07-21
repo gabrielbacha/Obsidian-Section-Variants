@@ -199,7 +199,7 @@ Each block may choose:
 
 The default is `responsive`.
 
-The rendered block context menu exposes these as an attached, checked **Narrow-screen layout** submenu. Choosing an option rewrites only that block’s authored container attribute through the open editor transaction. The choice is not duplicated in a dialog or vault-wide settings.
+The rendered block context menu exposes these as an attached, checked **Narrow-screen layout** submenu. Choosing an option rewrites only that block’s authored container attribute through the open editor transaction. Authored default, authored view, and narrow-layout submenus remain open after selection, update their check state locally, and rebind subsequent choices to the latest block source. The choice is not duplicated in a dialog or vault-wide settings.
 
 ## 8. Per-block controls
 
@@ -310,6 +310,8 @@ When current state differs from the authored default, the marker shows a subtle 
 The sticky note control also shows an indicator when any block differs.
 
 When every valid block uses Columns, the sticky label buttons control note-wide column visibility rather than the Toggle selection. A label visible in every matching block hides everywhere when selected; a mixed or hidden label becomes visible everywhere.
+
+The same Columns state exposes one all-columns visibility toggle. With every column visible it hides all columns in all valid blocks; when any column is hidden it restores every column. The action is session state and does not rewrite authored visibility.
 
 The concise marker tooltip reports the useful state on one line, for example:
 

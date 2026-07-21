@@ -6,6 +6,8 @@ export interface AttachedMenuItem {
 	checked?: boolean;
 	disabled?: boolean;
 	warning?: boolean;
+	/** Keep this menu and its attached parents open after applying a choice. */
+	keepOpen?: boolean;
 	onSelect?: () => void;
 	children?: AttachedMenuItem[];
 	input?: {
@@ -283,6 +285,23 @@ function createMenu(
 				() => {
 					if (isDisabled(menuItem)) return;
 					item.onSelect?.();
+					if (item.keepOpen) {
+						if (item.checked !== undefined) {
+							const selectableItems = items.filter(
+								(candidate) => candidate.label !== '-',
+							);
+							for (const [index, sibling] of menuItems.entries()) {
+								if (sibling.hasAttribute('aria-checked')) {
+									const checked = sibling === menuItem;
+									setCheckedVisual(sibling, checked);
+									const siblingItem = selectableItems[index];
+									if (siblingItem) siblingItem.checked = checked;
+								}
+							}
+						}
+						menuItem.focus();
+						return;
+					}
 					handle.onSelect?.();
 				},
 				{ signal: controller.signal },
@@ -329,6 +348,16 @@ function createMenu(
 			submenu?.submenuContains(target) === true,
 	};
 	return handle;
+}
+
+function setCheckedVisual(menuItem: HTMLElement, checked: boolean): void {
+	menuItem.setAttribute('aria-checked', String(checked));
+	const checkbox = menuItem.querySelector<HTMLElement>(
+		'.section-variants-context-menu-checkbox',
+	);
+	if (!checkbox) return;
+	checkbox.empty();
+	if (checked) setIcon(checkbox, 'check');
 }
 
 function focusRelative(

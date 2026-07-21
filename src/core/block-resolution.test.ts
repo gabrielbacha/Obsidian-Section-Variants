@@ -16,6 +16,18 @@ describe('current block resolution', () => {
 		expect(resolveCurrentBlock(before, after)?.variants).toHaveLength(3);
 	});
 
+	it('rebinds the same open menu after the opening attributes change', () => {
+		const before = parseNote(block(['A', 'B'])).blocks[0]!;
+		const after = parseNote(
+			block(['A', 'B']).replace('name="Box"', 'name="Renamed" view="columns"'),
+		).blocks;
+
+		expect(resolveCurrentBlock(before, after)?.attributes).toMatchObject({
+			name: 'Renamed',
+			view: 'columns',
+		});
+	});
+
 	it('uses a unique structural match after edits above the block', () => {
 		const before = parseNote(block(['A', 'B'])).blocks[0]!;
 		const after = parseNote(`Intro\n\n${block(['A', 'B', 'C'])}`).blocks;

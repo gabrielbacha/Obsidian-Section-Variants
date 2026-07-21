@@ -210,6 +210,30 @@ export class StateStore {
 		};
 	}
 
+	toggleAllColumnsAcrossNote(
+		path: string,
+		parsed: ParsedNote,
+	): { visible: boolean; blocks: number; columns: number } {
+		const blocks = parsed.blocks.filter((block) => block.valid);
+		const hasHiddenColumn = blocks.some((block) => {
+			const hidden = this.resolve(path, block).hiddenLabels;
+			return block.variants.some((variant) => hidden.has(variant.normalizedLabel));
+		});
+		const visible = hasHiddenColumn;
+		let columns = 0;
+		for (const block of blocks) {
+			const key = sessionKey(path, block.identityKey);
+			const hidden = visible
+				? new Set<string>()
+				: new Set(block.variants.map((variant) => variant.normalizedLabel));
+			columns += block.variants.length;
+			this.sessionHidden.set(key, hidden);
+			if (!visible) this.editingVariants.delete(key);
+		}
+		this.emit({ scope: 'note', path });
+		return { visible, blocks: blocks.length, columns };
+	}
+
 	restoreColumns(path: string, block: VariantBlock): void {
 		this.sessionHidden.set(sessionKey(path, block.identityKey), new Set());
 		this.emit({ scope: 'block', path, blockKey: block.identityKey });

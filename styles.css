@@ -50,7 +50,8 @@
 }
 
 .section-variants-add-variant,
-.section-variants-restore-columns {
+.section-variants-restore-columns,
+.section-variants-toggle-all-columns {
 	flex: 0 0 auto;
 	width: 22px;
 	height: 22px;
@@ -554,7 +555,8 @@ body.is-mobile .section-variants-context-menu-input {
 body.is-mobile .section-variants-segment,
 body.is-mobile .section-variants-marker,
 body.is-mobile .section-variants-add-variant,
-body.is-mobile .section-variants-restore-columns {
+body.is-mobile .section-variants-restore-columns,
+body.is-mobile .section-variants-toggle-all-columns {
 	min-height: 44px;
 }
 
@@ -568,7 +570,8 @@ body.is-mobile .section-variants-root {
 }
 
 body.is-mobile .section-variants-add-variant,
-body.is-mobile .section-variants-restore-columns {
+body.is-mobile .section-variants-restore-columns,
+body.is-mobile .section-variants-toggle-all-columns {
 	min-width: 44px;
 }
 
@@ -582,6 +585,7 @@ body.is-mobile .section-variants-reveal-controls {
 	.section-variants-marker,
 	.section-variants-add-variant,
 	.section-variants-restore-columns,
+	.section-variants-toggle-all-columns,
 	.section-variants-column-header button {
 		min-width: 44px;
 		min-height: 44px;

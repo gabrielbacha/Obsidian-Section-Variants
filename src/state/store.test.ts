@@ -313,6 +313,30 @@ describe('state identity migration', () => {
 		expect(store.resolve('Note.md', first).hiddenLabels.has('a')).toBe(false);
 		expect(store.resolve('Note.md', second).hiddenLabels.has('a')).toBe(false);
 	});
+
+	it('toggles every note column all hidden or all visible', async () => {
+		const store = await createStore();
+		const parsed = parseNote([
+			blockSource(),
+			blockSource().replace('::: B\nTwo', '::: C\nThree'),
+		].join('\n\n'));
+		const first = parsed.blocks[0];
+		if (!first) throw new Error('Missing fixture block');
+		store.setEditingVariant('Note.md', first, 'A');
+
+		const hidden = store.toggleAllColumnsAcrossNote('Note.md', parsed);
+		expect(hidden).toEqual({ visible: false, blocks: 2, columns: 4 });
+		for (const block of parsed.blocks) {
+			expect(store.resolve('Note.md', block).hiddenLabels.size).toBe(2);
+		}
+		expect(store.getEditingVariant('Note.md', first)).toBeUndefined();
+
+		const shown = store.toggleAllColumnsAcrossNote('Note.md', parsed);
+		expect(shown).toEqual({ visible: true, blocks: 2, columns: 4 });
+		for (const block of parsed.blocks) {
+			expect(store.resolve('Note.md', block).hiddenLabels.size).toBe(0);
+		}
+	});
 });
 
 async function createStore(): Promise<StateStore> {

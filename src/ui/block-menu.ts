@@ -79,6 +79,7 @@ export function openBlockMenu(
 			children: block.variants.map((variant) => ({
 				label: variant.label,
 				checked: variant.normalizedLabel === normalizeLabel(authoredLabel),
+				keepOpen: true,
 				onSelect: () => host.setBlockDefaultLabel(
 					path,
 					block,
@@ -96,6 +97,7 @@ export function openBlockMenu(
 			].map(({ label, value }) => ({
 				label,
 				checked: authoredView === value,
+				keepOpen: true,
 				onSelect: () => host.setBlockAuthoredView(
 					path,
 					block,
@@ -115,6 +117,7 @@ export function openBlockMenu(
 			children: NARROW_LAYOUT_OPTIONS.map(({ label, value }) => ({
 				label,
 				checked: responsive === value,
+				keepOpen: true,
 				onSelect: () => host.setBlockResponsive(
 					path,
 					block,

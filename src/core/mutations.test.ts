@@ -352,10 +352,11 @@ describe('updateBlockAttributes', () => {
 		);
 		const { app, path, read, firstBlock } = setup(source);
 
+		const staleTarget = firstBlock();
 		const result = await updateBlockAttributesPatch(
 			app,
 			path,
-			firstBlock(),
+			staleTarget,
 			{ name: 'New' },
 			parse,
 		);
@@ -368,6 +369,20 @@ describe('updateBlockAttributes', () => {
 			responsive: 'scroll',
 		});
 		expect(read()).not.toContain('name="Old"');
+
+		const second = await updateBlockAttributesPatch(
+			app,
+			path,
+			staleTarget,
+			{ view: 'toggle' },
+			parse,
+		);
+		expect(second.after.attributes).toMatchObject({
+			name: 'New',
+			view: 'toggle',
+			defaultLabel: 'B',
+			responsive: 'scroll',
+		});
 	});
 });
 
