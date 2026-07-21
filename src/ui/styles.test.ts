@@ -31,7 +31,7 @@ describe('presentation safety selectors', () => {
 
 	it('keeps the toolbar inside the widget instead of translating it into clipping', () => {
 		expect(CSS).toMatch(
-			/\.section-variants-toolbar\s*\{[^}]*top:\s*var\(--size-2-1\)/su,
+			/\.section-variants-toolbar\s*\{[^}]*top:\s*var\(--size-2-2\)[^}]*padding:\s*2px/su,
 		);
 		expect(CSS).not.toMatch(
 			/\.section-variants-toolbar\s*\{[^}]*transform:\s*translateY\(-50%\)/su,
@@ -58,5 +58,14 @@ describe('presentation safety selectors', () => {
 
 	it('does not animate grid layout properties', () => {
 		expect(CSS).not.toMatch(/transition:\s*grid-template-columns/u);
+	});
+
+	it('switches wrapped grid rows to horizontal separators', () => {
+		expect(CSS).toMatch(
+			/section-variants-column-later-row[^}]*border-block-start:\s*1px solid/su,
+		);
+		expect(CSS).toMatch(
+			/section-variants-column-row-start[^}]*border-inline-start:\s*0/su,
+		);
 	});
 });

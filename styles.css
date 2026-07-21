@@ -11,7 +11,8 @@
 	--section-variants-rule: var(--background-modifier-border);
 	position: relative;
 	margin-block: var(--size-4-4);
-	padding: var(--size-4-3);
+	padding-block: var(--size-4-3);
+	padding-inline: 0;
 	border: 0;
 	color: var(--text-normal);
 }
@@ -57,11 +58,11 @@
 .section-variants-toolbar {
 	position: absolute;
 	z-index: 2;
-	top: var(--size-2-1);
+	top: var(--size-2-2);
 	right: var(--size-2-3);
 	width: fit-content;
 	max-width: 100%;
-	padding-inline: 2px;
+	padding: 2px;
 	border-radius: var(--radius-s);
 	background: var(--background-primary);
 }
@@ -254,6 +255,18 @@
 	border-inline-start: 1px solid var(--section-variants-rule);
 }
 
+.section-variants-view-columns
+	> .section-variants-panel.section-variants-column-later-row {
+	padding-block-start: var(--size-4-4);
+	border-block-start: 1px solid var(--section-variants-rule);
+}
+
+.section-variants-view-columns
+	> .section-variants-panel.section-variants-column-row-start {
+	padding-inline-start: 0;
+	border-inline-start: 0;
+}
+
 .section-variants-view-toggle > .section-variants-panel.is-inactive,
 .section-variants-view-columns > .section-variants-panel.is-hidden-column {
 	display: none;
@@ -276,6 +289,19 @@
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+}
+
+.section-variants-column-actions {
+	display: flex;
+	flex: 0 0 auto;
+	align-items: center;
+	gap: var(--size-2-1);
+}
+
+.section-variants-column-actions button {
+	width: 22px;
+	height: 22px;
+	padding: 3px;
 }
 
 .section-variants-nested {

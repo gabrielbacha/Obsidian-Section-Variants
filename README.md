@@ -37,6 +37,7 @@ The canonical container is `variants`. Additional aliases can be enabled in **Se
 - Shift-select a label to apply it to every matching block in the note.
 - Open the small layers marker for **Follow global state**, **Reset to authored defaults**, **Configure defaults**, or **Rename variant**.
 - Hide individual columns temporarily and explicitly save visibility when wanted.
+- Use the copy action in any variant header to copy that variant's exact Markdown content without its outer fences.
 - Use the bottom-right note control to apply labels or views across a note. It measures the current Obsidian status bar and stays above it, including in pop-out windows.
 - In Live Preview, Toggle content and every visible Columns panel are directly editable with Obsidian's normal Live Preview formatting. In Columns view, the A/B label controls show or hide their matching columns. Links, checkboxes, embeds, buttons, and nested controls keep their normal behavior.
 - Source Mode always displays the complete Markdown source.

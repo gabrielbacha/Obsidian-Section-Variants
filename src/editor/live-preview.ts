@@ -26,7 +26,12 @@ import {
 import { VariantBlock, VariantSection } from '../core/types';
 import { SectionVariantsHost } from '../plugin-host';
 import { createBlockControls } from '../ui/block-controls';
+import { syncColumnSeparators } from '../ui/column-layout';
 import { hasRoomForColumns, resolveLengthPx } from '../ui/css-length';
+import {
+	createVariantHeader,
+	VariantHeaderHandle,
+} from '../ui/variant-header';
 import {
 	changesAreWithinEditableSpans,
 	DocumentChange,
@@ -326,6 +331,8 @@ type LiveWidgetMode = 'toggle' | 'columns';
 
 interface LiveWidgetResources {
 	component: Component;
+	columnObserver?: ResizeObserver;
+	headers: Map<string, VariantHeaderHandle>;
 	inlines: Map<string, InlineColumnEditor>;
 	uiSignature: string;
 	staticContentSignature: string;
@@ -399,6 +406,7 @@ class LiveBlockWidget extends WidgetType {
 		component.load();
 		const resources: LiveWidgetResources = {
 			component,
+			headers: new Map(),
 			inlines: new Map(),
 			uiSignature: this.uiSignature,
 			staticContentSignature: this.staticContentSignature,
@@ -422,6 +430,11 @@ class LiveBlockWidget extends WidgetType {
 			if (variant) {
 				const panel = content.createDiv({ cls: 'section-variants-panel is-editing' });
 				panel.dataset.label = variant.label;
+				resources.headers.set(variant.normalizedLabel, createVariantHeader({
+					parent: panel,
+					source: this.source,
+					variant,
+				}));
 				resources.inlines.set(variant.normalizedLabel, new InlineColumnEditor({
 					host: this.host,
 					path: this.path,
@@ -445,21 +458,26 @@ class LiveBlockWidget extends WidgetType {
 		) {
 			content.style.gridTemplateColumns = state.widths;
 		}
+		content.toggleClass(
+			'section-variants-columns-stack',
+			state.responsive === 'stack',
+		);
+		content.toggleClass(
+			'section-variants-columns-scroll',
+			state.responsive === 'scroll',
+		);
 		for (const variant of this.block.variants) {
 			if (state.hiddenLabels.has(variant.normalizedLabel)) continue;
 			const panel = content.createDiv({ cls: 'section-variants-panel' });
 			panel.dataset.label = variant.label;
-			const header = panel.createDiv({ cls: 'section-variants-column-header' });
-			header.createSpan({ text: variant.label });
-			const hide = header.createEl('button', {
-				type: 'button',
-				cls: 'clickable-icon',
-				attr: { 'aria-label': `Hide ${variant.label} column` },
-			});
-			setIcon(hide, 'eye-off');
-			hide.addEventListener('click', () => {
-				this.host.store.toggleHidden(this.path, this.block, variant.label);
-			});
+			resources.headers.set(variant.normalizedLabel, createVariantHeader({
+				parent: panel,
+				source: this.source,
+				variant,
+				onHide: () => {
+					this.host.store.toggleHidden(this.path, this.block, variant.label);
+				},
+			}));
 			panel.addClass('is-editing');
 			resources.inlines.set(variant.normalizedLabel, new InlineColumnEditor({
 				host: this.host,
@@ -484,6 +502,11 @@ class LiveBlockWidget extends WidgetType {
 				this.host.store.restoreColumns(this.path, this.block);
 			});
 		}
+		resources.columnObserver = new ResizeObserver(() => {
+			syncColumnSeparators(content);
+		});
+		resources.columnObserver.observe(content);
+		syncColumnSeparators(content);
 		return root;
 	}
 
@@ -504,8 +527,10 @@ class LiveBlockWidget extends WidgetType {
 		);
 		if (resources.inlines.size !== variants.length) return false;
 		for (const variant of variants) {
+			const header = resources.headers.get(variant.normalizedLabel);
 			const inline = resources.inlines.get(variant.normalizedLabel);
-			if (!inline?.rebind(this.source, variant, view)) return false;
+			if (!header || !inline?.rebind(this.source, variant, view)) return false;
+			header.rebind(this.source, variant);
 		}
 		dom.dataset.blockKey = this.block.identityKey;
 		return true;
@@ -513,18 +538,17 @@ class LiveBlockWidget extends WidgetType {
 
 	destroy(dom: HTMLElement): void {
 		const resources = liveWidgetResources.get(dom);
+		resources?.columnObserver?.disconnect();
 		for (const inline of resources?.inlines.values() ?? []) inline.destroy();
 		resources?.component.unload();
 		liveWidgetResources.delete(dom);
 	}
 
 	ignoreEvent(): boolean {
-		// The widget owns its controls, rendered links, and nested CodeMirror
-		// editors. Letting the outer editor interpret these events steals the
-		// activation click before a column can enter editing mode.
+		// The widget owns its controls and nested CodeMirror editors. Letting the
+		// outer editor interpret these events would steal their input.
 		return true;
 	}
-
 }
 
 function renderLiveToolbar(

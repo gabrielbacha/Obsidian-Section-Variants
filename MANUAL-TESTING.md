@@ -13,6 +13,7 @@
 
 - In Toggle view, confirm the selected variant is immediately editable. Type repeatedly in headings, emphasis, links, and lists and confirm native Live Preview formatting survives edits above the block and undo/redo.
 - In Columns view, confirm every visible panel is immediately editable without activation and uses the same formatting-preserving editor. Toggle A/B controls off and on and verify the matching columns hide and return.
+- In both views, verify every visible variant shows its label at top-left. Copy before and after editing and confirm the clipboard contains current Markdown content, including nested blocks, without the variant's own fences.
 - Verify links, checkboxes, embeds, buttons, column hide controls, and nested variant controls keep their normal behavior.
 - Test typing, Enter at the end, repeated input, empty variants, paste, cut, drag/drop, and multiple selections.
 - Confirm nested blocks remain rendered between independent prose editors and parent editing cannot expose nested fences.
