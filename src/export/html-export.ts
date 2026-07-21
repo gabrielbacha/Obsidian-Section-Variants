@@ -175,6 +175,12 @@ async function renderExportBlock(
 	const wrapper = target.createDiv({
 		cls: `section-variants-export-block section-variants-export-${view}`,
 	});
+	if (block.attributes.name) {
+		wrapper.createEl('h1', {
+			cls: 'section-variants-export-name',
+			text: block.attributes.name,
+		});
+	}
 	for (const variant of selection.variants) {
 		const panel = wrapper.createEl('section');
 		panel.createEl('h2', { text: variant.label });
@@ -263,6 +269,7 @@ function exportCss(minColumnWidth: string): string {
 }
 body { margin: 0 auto; max-width: 72rem; padding: 2rem; color: var(--sv-fg); background: var(--sv-bg); font: 16px/1.55 system-ui, sans-serif; }
 .section-variants-export-block { margin: 1.5rem 0; }
+.section-variants-export-name { grid-column: 1 / -1; margin: 0 0 .5rem; font-size: 1rem; }
 .section-variants-export-columns, .section-variants-export-auto { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, ${minColumnWidth}), 1fr)); gap: 1.5rem; }
 .section-variants-export-block > section { min-width: 0; }
 .section-variants-export-columns > section + section, .section-variants-export-auto > section + section { padding-left: 1.5rem; border-left: 1px solid var(--sv-rule); }

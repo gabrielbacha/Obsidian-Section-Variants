@@ -132,7 +132,7 @@ Both shorthand and explicit syntax are supported. The plugin generates shorthand
 ### 6.4 Optional attributes
 
 ```markdown
-:::: {.variants #topic-1 view="columns" default="A" widths="40% 60%" min-width="320px" responsive="responsive"}
+:::: {.variants #topic-1 name="Topic alternatives" view="columns" default="A" widths="40% 60%" min-width="320px" responsive="responsive"}
 
 ...
 
@@ -144,6 +144,7 @@ Supported attributes:
 | Attribute   | Purpose                              |
 | ----------- | ------------------------------------ |
 | `#id`       | Stable semantic identifier           |
+| `name`      | Optional title rendered for the whole box |
 | `view`      | `toggle`, `columns`, or `auto`       |
 | `default`   | Authored default label               |
 | `widths`    | CSS grid track values                |
@@ -213,11 +214,14 @@ Behavior:
 - clicking a label changes that block
 - `Shift + click` applies the label to every matching block in the note
 - the hover/focus surface exposes toggle, columns, and auto view modes
-- the marker menu contains exactly:
+- the marker menu contains:
   - follow global state
   - reset to authored defaults
-  - authored-default configuration
-  - variant renaming
+  - box name and authored-default configuration
+  - add variant
+  - delete variant, followed by variant selection and destructive confirmation
+  - rename variant, followed by variant selection and rename confirmation
+- a block always retains at least two variants
 - focused-block commands provide column visibility persistence, restoration, and stable-ID creation
 
 The controls:

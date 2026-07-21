@@ -20,6 +20,7 @@ export interface Diagnostic {
 
 export interface ContainerAttributes {
 	id?: string;
+	name?: string;
 	view?: ViewMode;
 	defaultLabel?: string;
 	widths?: string;
@@ -71,6 +72,7 @@ export interface ParsedNote {
 
 export interface SerializeOptions {
 	labels: string[];
+	name?: string;
 	defaultLabel?: string;
 	view?: ViewMode;
 	responsive?: ResponsiveMode;

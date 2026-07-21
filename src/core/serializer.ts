@@ -24,6 +24,7 @@ export function serializeVariantsBlock(
 	const innerFence = ':'.repeat(innerLength);
 	const attributes = ['.variants'];
 	if (options.id) attributes.push(`#${options.id}`);
+	if (options.name) attributes.push(`name="${escapeAttribute(options.name)}"`);
 	if (options.view && options.view !== 'toggle') {
 		attributes.push(`view="${escapeAttribute(options.view)}"`);
 	}
@@ -66,6 +67,9 @@ export function serializeContainerOpening(
 ): string {
 	const values = ['.variants'];
 	if (attributes.id) values.push(`#${attributes.id}`);
+	if (attributes.name) {
+		values.push(`name="${escapeAttribute(attributes.name)}"`);
+	}
 	if (attributes.view && attributes.view !== 'toggle') {
 		values.push(`view="${attributes.view}"`);
 	}

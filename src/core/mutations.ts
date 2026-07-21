@@ -25,6 +25,81 @@ export interface RenameMutationResult {
 	mappings: BlockIdentityMapping[];
 }
 
+export interface VariantMutationResult extends BlockIdentityMapping {
+	label: string;
+}
+
+export async function addVariant(
+	app: App,
+	path: string,
+	target: VariantBlock,
+	label: string,
+	parse: (source: string) => ParsedNote,
+): Promise<VariantMutationResult> {
+	const trimmed = validateNewLabel(label);
+	const mapping = await processTarget(app, path, target, parse, (source, current) => {
+		if (!current.valid || !current.closing) {
+			throw new Error('Fix this variants block before adding a variant.');
+		}
+		if (
+			current.variants.some(
+				(variant) => variant.normalizedLabel === normalizeLabel(trimmed),
+			)
+		) {
+			throw new Error(`Variant ${trimmed} already exists in this box.`);
+		}
+		const marker = ':'.repeat(Math.max(3, current.opening.colonCount - 1));
+		const opening = serializeVariantOpening(marker, trimmed);
+		const lineBreak = source.includes('\r\n') ? '\r\n' : '\n';
+		const insertion = `${opening}${lineBreak}${lineBreak}${marker}${lineBreak}`;
+		return `${source.slice(0, current.closing.from)}${insertion}${source.slice(current.closing.from)}`;
+	});
+	return { ...mapping, label: trimmed };
+}
+
+export async function deleteVariant(
+	app: App,
+	path: string,
+	target: VariantBlock,
+	label: string,
+	parse: (source: string) => ParsedNote,
+): Promise<VariantMutationResult> {
+	const normalized = normalizeLabel(label);
+	const mapping = await processTarget(app, path, target, parse, (source, current) => {
+		if (!current.valid || !current.closing) {
+			throw new Error('Fix this variants block before deleting a variant.');
+		}
+		if (current.variants.length <= 2) {
+			throw new Error('A variants box must retain at least two variants.');
+		}
+		const variant = current.variants.find(
+			(candidate) => candidate.normalizedLabel === normalized,
+		);
+		if (!variant?.closing) {
+			throw new Error(`Variant ${label} no longer exists in this box.`);
+		}
+		let end = variant.closing.to;
+		if (source.slice(end, end + 2) === '\r\n') end += 2;
+		else if (source.charCodeAt(end) === 10) end += 1;
+		const edits = [{ from: variant.opening.from, to: end, text: '' }];
+		if (
+			current.attributes.defaultLabel &&
+			normalizeLabel(current.attributes.defaultLabel) === normalized
+		) {
+			edits.push({
+				from: current.opening.from,
+				to: current.opening.to,
+				text: serializeContainerOpening(current.opening.colonCount, {
+					...current.attributes,
+					defaultLabel: undefined,
+				}),
+			});
+		}
+		return applyEdits(source, edits);
+	});
+	return { ...mapping, label };
+}
+
 export async function addStableBlockId(
 	app: App,
 	path: string,
@@ -89,10 +164,7 @@ export async function renameVariant(
 	acrossNote: boolean,
 	parse: (source: string) => ParsedNote,
 ): Promise<RenameMutationResult> {
-	const trimmed = newLabel.trim();
-	if (!trimmed || /[\r\n]/u.test(trimmed)) {
-		throw new Error('Labels must be nonempty and fit on one line.');
-	}
+	const trimmed = validateNewLabel(newLabel);
 	const file = resolveFile(app, path);
 	let result: RenameMutationResult | undefined;
 	await app.vault.process(file, (source) => {
@@ -120,9 +192,7 @@ export async function renameVariant(
 				throw new Error(`Block on line ${block.opening.lineStart + 1} already has label ${trimmed}.`);
 			}
 			const marker = ':'.repeat(renamed.opening.colonCount);
-			const opening = SAFE_SHORTHAND_LABEL.test(trimmed)
-				? `${marker} ${trimmed}`
-				: `${marker} {.variant label="${escapeAttribute(trimmed)}"}`;
+			const opening = serializeVariantOpening(marker, trimmed);
 			edits.push({ from: renamed.opening.from, to: renamed.opening.to, text: opening });
 			if (
 				block.attributes.defaultLabel &&
@@ -154,6 +224,20 @@ export async function renameVariant(
 	});
 	if (!result) throw new Error('The rename did not complete.');
 	return result;
+}
+
+function validateNewLabel(label: string): string {
+	const trimmed = label.trim();
+	if (!trimmed || /[\r\n]/u.test(trimmed)) {
+		throw new Error('Labels must be nonempty and fit on one line.');
+	}
+	return trimmed;
+}
+
+function serializeVariantOpening(marker: string, label: string): string {
+	return SAFE_SHORTHAND_LABEL.test(label)
+		? `${marker} ${label}`
+		: `${marker} {.variant label="${escapeAttribute(label)}"}`;
 }
 
 async function processTarget(

@@ -68,4 +68,10 @@ describe('presentation safety selectors', () => {
 			/section-variants-column-row-start[^}]*border-inline-start:\s*0/su,
 		);
 	});
+
+	it('clears first-row variant actions below the floating block toolbar', () => {
+		expect(CSS).toMatch(
+			/section-variants-panel:not\(\.section-variants-column-later-row\)[^}]*section-variants-column-actions\s*\{[^}]*margin-block-start:\s*var\(--size-4-3\)/su,
+		);
+	});
 });

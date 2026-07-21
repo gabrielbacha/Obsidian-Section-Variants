@@ -363,6 +363,7 @@ class LiveBlockWidget extends WidgetType {
 			mode,
 			state.selectedLabel,
 			state.view,
+			block.attributes.name ?? '',
 			String(state.differsFromAuthored),
 			String(host.store.settings.showIndicators),
 			state.responsive,
@@ -417,6 +418,12 @@ class LiveBlockWidget extends WidgetType {
 		const content = root.createDiv({
 			cls: `section-variants-content section-variants-view-${contentMode}`,
 		});
+		if (this.block.attributes.name) {
+			content.createDiv({
+				cls: 'section-variants-block-name',
+				text: this.block.attributes.name,
+			});
+		}
 		const state = this.host.store.resolve(this.path, this.block);
 		content.dataset.responsive = state.responsive;
 		content.style.setProperty('--section-variants-min-width', state.minWidth);
@@ -490,7 +497,7 @@ class LiveBlockWidget extends WidgetType {
 				onExit: () => undefined,
 			}));
 		}
-		if (content.childElementCount === 0) {
+		if (resources.inlines.size === 0) {
 			const empty = content.createDiv({ cls: 'section-variants-empty' });
 			setIcon(empty.createSpan(), 'layers');
 			empty.createSpan({ text: 'All columns are hidden.' });

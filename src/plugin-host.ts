@@ -8,7 +8,9 @@ export interface SectionVariantsHost {
 	parse(source: string): ParsedNote;
 	refreshAllViews(path?: string): void;
 	openBlockConfiguration(path: string, block: VariantBlock): void;
-	openRenameVariant(path: string, block: VariantBlock): void;
+	openAddVariant(path: string, block: VariantBlock): void;
+	openDeleteVariant(path: string, block: VariantBlock, label: string): void;
+	openRenameVariant(path: string, block: VariantBlock, label: string): void;
 	ensurePersistentIdentity(
 		path: string,
 		block: VariantBlock,

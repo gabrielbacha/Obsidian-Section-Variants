@@ -7,7 +7,7 @@ Section Variants lets you switch, compare, and manage parallel versions of a Mar
 Use a Pandoc fenced div containing two or more labeled variant divs:
 
 ```markdown
-:::: {.variants #introduction view="columns" default="Short"}
+:::: {.variants #introduction name="Introduction options" view="columns" default="Short"}
 
 ::: Short
 A concise introduction.
@@ -23,6 +23,7 @@ A longer introduction with more context.
 Safe single-token labels use shorthand. Labels containing spaces or punctuation use the explicit `.variant` form. Supported block attributes are:
 
 - `#id`
+- `name="Box title"`
 - `view="toggle|columns|auto"`
 - `default="Label"`
 - `widths="40% 60%"`
@@ -35,7 +36,7 @@ The canonical container is `variants`. Additional aliases can be enabled in **Se
 
 - Hover or focus a bordered block to reveal its label and Toggle/Columns/Auto controls.
 - Shift-select a label to apply it to every matching block in the note.
-- Open the small layers marker for **Follow global state**, **Reset to authored defaults**, **Configure defaults**, or **Rename variant**.
+- Open the small layers marker to configure or name the box, add a variant, or choose a variant to rename or delete. Deletion always requires confirmation and a box always retains at least two variants.
 - Hide individual columns temporarily and explicitly save visibility when wanted.
 - Use the copy action in any variant header to copy that variant's exact Markdown content without its outer fences.
 - Use the bottom-right note control to apply labels or views across a note. It measures the current Obsidian status bar and stays above it, including in pop-out windows.

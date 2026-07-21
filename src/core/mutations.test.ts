@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { FakeApp } from '../test/obsidian-mock';
 import type { App } from 'obsidian';
-import { addStableBlockId, fixMissingClosers, renameVariant } from './mutations';
+import {
+	addStableBlockId,
+	addVariant,
+	deleteVariant,
+	fixMissingClosers,
+	renameVariant,
+} from './mutations';
 import { parseNote } from './parser';
 import { ParsedNote, VariantBlock } from './types';
 
@@ -184,5 +190,65 @@ describe('renameVariant', () => {
 
 		expect(result.mappings).toHaveLength(1);
 		expect(parse(read()).blocks[0]?.variants[0]?.label).toBe('a');
+	});
+});
+
+describe('addVariant', () => {
+	it('adds an empty, valid variant before the outer closing fence', async () => {
+		const { app, path, read, firstBlock } = setup(TWO_VARIANTS);
+
+		const result = await addVariant(app, path, firstBlock(), 'Long label', parse);
+
+		expect(result.after.variants.map((variant) => variant.label)).toEqual([
+			'A',
+			'B',
+			'Long label',
+		]);
+		expect(read()).toContain('::: {.variant label="Long label"}\n\n:::\n::::');
+		expect(result.after.valid).toBe(true);
+	});
+
+	it('rejects duplicate labels ignoring case', async () => {
+		const { app, path, firstBlock } = setup(TWO_VARIANTS);
+
+		await expect(
+			addVariant(app, path, firstBlock(), 'a', parse),
+		).rejects.toThrow(/already exists/iu);
+	});
+});
+
+describe('deleteVariant', () => {
+	it('deletes the chosen variant and all of its content', async () => {
+		const source = TWO_VARIANTS.replace(
+			'::: B\nBeta.\n:::',
+			'::: B\nBeta.\n:::\n\n::: C\nGamma.\n:::',
+		);
+		const { app, path, read, firstBlock } = setup(source);
+
+		const result = await deleteVariant(app, path, firstBlock(), 'B', parse);
+
+		expect(result.after.variants.map((variant) => variant.label)).toEqual(['A', 'C']);
+		expect(read()).not.toContain('Beta.');
+		expect(read()).toContain('Gamma.');
+	});
+
+	it('clears an authored default that points at the deleted variant', async () => {
+		const source = TWO_VARIANTS.replace(
+			':::: variants',
+			':::: {.variants default="B"}',
+		).replace('::: B\nBeta.\n:::', '::: B\nBeta.\n:::\n::: C\nGamma.\n:::');
+		const { app, path, read, firstBlock } = setup(source);
+
+		await deleteVariant(app, path, firstBlock(), 'B', parse);
+
+		expect(parse(read()).blocks[0]?.attributes.defaultLabel).toBeUndefined();
+	});
+
+	it('refuses to leave fewer than two variants', async () => {
+		const { app, path, firstBlock } = setup(TWO_VARIANTS);
+
+		await expect(
+			deleteVariant(app, path, firstBlock(), 'A', parse),
+		).rejects.toThrow(/at least two/iu);
 	});
 });

@@ -10,7 +10,9 @@ import {
 } from 'obsidian';
 import { registerCommands } from './commands';
 import {
+	addVariant,
 	addStableBlockId,
+	deleteVariant,
 	fixMissingClosers,
 	renameVariant,
 	updateBlockAttributes,
@@ -29,7 +31,9 @@ import { ReadingViewCoordinator } from './reading/coordinator';
 import { SectionVariantsSettingTab } from './settings';
 import { StateStore, StoreChange } from './state/store';
 import {
+	AddVariantModal,
 	BlockConfigurationModal,
+	DeleteVariantConfirmationModal,
 	InsertVariantsModal,
 	RenameVariantModal,
 } from './ui/modals';
@@ -178,10 +182,45 @@ export default class SectionVariantsPlugin
 		}).open();
 	}
 
-	openRenameVariant(path: string, block: VariantBlock): void {
+	openAddVariant(path: string, block: VariantBlock): void {
+		new AddVariantModal(this.app, block, async (label) => {
+			const result = await addVariant(
+				this.app,
+				path,
+				block,
+				label,
+				(source) => this.parseFresh(source),
+			);
+			this.store.rekeyBlockState(path, result.before, result.after);
+			await this.store.flush();
+			new Notice(`Added ${result.label}.`);
+		}).open();
+	}
+
+	openDeleteVariant(path: string, block: VariantBlock, label: string): void {
+		new DeleteVariantConfirmationModal(this.app, label, async () => {
+			const result = await deleteVariant(
+				this.app,
+				path,
+				block,
+				label,
+				(source) => this.parseFresh(source),
+			);
+			this.store.migrateDeletedVariant(
+				path,
+				result.before,
+				result.after,
+				result.label,
+			);
+			await this.store.flush();
+			new Notice(`Deleted ${result.label}.`);
+		}).open();
+	}
+
+	openRenameVariant(path: string, block: VariantBlock, label: string): void {
 		new RenameVariantModal(
 			this.app,
-			block,
+			label,
 			async (oldLabel, newLabel, acrossNote) => {
 				const result = await renameVariant(
 					this.app,

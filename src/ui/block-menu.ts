@@ -34,11 +34,57 @@ export function openBlockMenu(
 		}),
 	);
 	menu.addItem((item) =>
-		item.setTitle(BLOCK_MENU_ACTIONS[3]).setIcon('text-cursor-input').onClick(() => {
-			host.openRenameVariant(path, block);
+		item.setTitle(BLOCK_MENU_ACTIONS[3]).setIcon('plus').onClick(() => {
+			host.openAddVariant(path, block);
 		}),
 	);
+	menu.addItem((item) =>
+		item
+			.setTitle(`${BLOCK_MENU_ACTIONS[4]} ›`)
+			.setIcon('trash-2')
+			.setDisabled(block.variants.length <= 2)
+			.setWarning(true)
+			.onClick((submenuEvent) => {
+				openVariantSubmenu(block, submenuEvent, (label) => {
+					host.openDeleteVariant(path, block, label);
+				});
+			}),
+	);
+	menu.addItem((item) =>
+		item
+			.setTitle(`${BLOCK_MENU_ACTIONS[5]} ›`)
+			.setIcon('text-cursor-input')
+			.onClick((submenuEvent) => {
+				openVariantSubmenu(block, submenuEvent, (label) => {
+					host.openRenameVariant(path, block, label);
+				});
+			}),
+	);
 	menu.showAtMouseEvent(event);
+}
+
+function openVariantSubmenu(
+	block: VariantBlock,
+	event: MouseEvent | KeyboardEvent,
+	onSelect: (label: string) => void,
+): void {
+	const submenu = new Menu();
+	for (const variant of block.variants) {
+		submenu.addItem((item) =>
+			item.setTitle(variant.label).onClick(() => onSelect(variant.label)),
+		);
+	}
+	const target = event.currentTarget as HTMLElement | null;
+	const rect = target?.getBoundingClientRect();
+	const mouseX = 'clientX' in event ? event.clientX : 0;
+	const mouseY = 'clientY' in event ? event.clientY : 0;
+	submenu.showAtPosition(
+		{
+			x: mouseX || rect?.right || 0,
+			y: mouseY || rect?.top || 0,
+		},
+		target?.ownerDocument,
+	);
 }
 
 export function blockMarkerTooltip(
@@ -47,7 +93,7 @@ export function blockMarkerTooltip(
 	block: VariantBlock,
 ): string {
 	const state = host.store.resolve(path, block);
-	const current = `${state.selectedLabel} · ${viewLabel(state.view)}`;
+	const current = `${block.attributes.name ? `${block.attributes.name} · ` : ''}${state.selectedLabel} · ${viewLabel(state.view)}`;
 	if (!state.differsFromAuthored) return current;
 	return `${current} · default ${effectiveAuthoredLabel(block)} / ${viewLabel(
 		effectiveAuthoredView(block, host.store.settings.defaultView),

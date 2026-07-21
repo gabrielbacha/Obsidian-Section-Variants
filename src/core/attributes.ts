@@ -28,6 +28,7 @@ const RESPONSIVE_MODES = new Set<ResponsiveMode>([
 	'scroll',
 ]);
 const CONTAINER_KEYS = new Set([
+	'name',
 	'view',
 	'default',
 	'widths',
@@ -92,6 +93,7 @@ function describeContainer(bag: AttributeBag): OpeningDescription {
 	const diagnostics = [...bag.diagnostics];
 	const attributes: ContainerAttributes = {};
 	if (bag.id) attributes.id = bag.id;
+	if (bag.values.name) attributes.name = bag.values.name;
 
 	for (const key of Object.keys(bag.values)) {
 		if (!CONTAINER_KEYS.has(key)) {

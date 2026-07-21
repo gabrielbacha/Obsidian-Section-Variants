@@ -86,6 +86,12 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 		const content = this.containerEl.createDiv({
 			cls: `section-variants-content section-variants-view-${mode}`,
 		});
+		if (this.block.attributes.name) {
+			content.createDiv({
+				cls: 'section-variants-block-name',
+				text: this.block.attributes.name,
+			});
+		}
 		this.columnsContent = mode === 'columns' ? content : undefined;
 		content.dataset.responsive = state.responsive;
 		content.style.setProperty('--section-variants-min-width', state.minWidth);

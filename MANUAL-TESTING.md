@@ -6,7 +6,9 @@
 - Repeatedly type, paste, press Enter, and undo in headings and at the first and last content positions; confirm the complete frame and toolbar never disappear. Repeat with blank variants and LF/CRLF notes in light and dark themes.
 - Confirm only the marker shows at rest on pointer devices; hover and keyboard focus reveal labels plus Toggle/Columns/Auto without clipping in narrow panes or at zoomed text sizes.
 - Confirm touch controls remain visible and at least 44px, long labels scroll safely, and reduced motion disables reveal animation.
-- Confirm marker tooltips are one line and the block menu contains only **Follow global state**, **Reset to authored defaults**, **Configure defaults**, and **Rename variant**.
+- Confirm marker tooltips are one line and the block menu offers **Follow global state**, **Reset to authored defaults**, **Configure box**, **Add variant**, **Delete variant**, and **Rename variant**.
+- Give a box a name during insertion and through **Configure box**; verify it renders once above its variants in Toggle, Columns, Reading View, Live Preview, and HTML export.
+- Add variants with shorthand-safe and punctuation-bearing labels. Rename by choosing the target from the secondary menu and confirming the new label. Delete by choosing the target from the secondary menu and accepting the destructive confirmation; verify deletion is disabled when only two variants remain.
 - Verify the note-wide control sits above Obsidian's actual status bar, stays inside bottom/right safe areas, and expands left. Resize and show/hide the status bar in main and pop-out windows.
 
 ## Formatted Live Preview editing

@@ -8,6 +8,7 @@ import {
 import { errorMessage } from '../core/errors';
 
 export class InsertVariantsModal extends Modal {
+	private name = '';
 	private labels = ['A', 'B'];
 	private defaultIndex = 0;
 	private view: ViewMode = 'toggle';
@@ -34,6 +35,14 @@ export class InsertVariantsModal extends Modal {
 		this.contentEl.createEl('p', {
 			text: 'Add at least two unique labels. Labels with spaces are generated in explicit pandoc form.',
 		});
+		new Setting(this.contentEl)
+			.setName('Box name')
+			.setDesc('Optional title shown above the variants.')
+			.addText((text) =>
+				text.setValue(this.name).onChange((value) => {
+					this.name = value;
+				}),
+			);
 		this.labels.forEach((label, index) => this.renderLabelSetting(label, index));
 
 		new Setting(this.contentEl).addButton((button) =>
@@ -116,6 +125,7 @@ export class InsertVariantsModal extends Modal {
 		}
 		this.onSubmit({
 			labels,
+			name: this.name.trim() || undefined,
 			defaultLabel: labels[this.defaultIndex],
 			view: this.view,
 		});
@@ -128,6 +138,7 @@ export class InsertVariantsModal extends Modal {
 }
 
 export class BlockConfigurationModal extends Modal {
+	private name: string;
 	private defaultLabel: string;
 	private view: ViewMode;
 	private widths: string;
@@ -143,6 +154,7 @@ export class BlockConfigurationModal extends Modal {
 		) => Promise<void>,
 	) {
 		super(app);
+		this.name = block.attributes.name ?? '';
 		this.defaultLabel = block.attributes.defaultLabel ?? block.variants[0]?.label ?? '';
 		this.view = block.attributes.view ?? 'toggle';
 		this.widths = block.attributes.widths ?? '';
@@ -152,6 +164,14 @@ export class BlockConfigurationModal extends Modal {
 
 	onOpen(): void {
 		this.setTitle('Configure variants block');
+		new Setting(this.contentEl)
+			.setName('Box name')
+			.setDesc('Optional title shown above the variants.')
+			.addText((text) =>
+				text.setValue(this.name).onChange((value) => {
+					this.name = value;
+				}),
+			);
 		new Setting(this.contentEl)
 			.setName('Authored default')
 			.addDropdown((dropdown) => {
@@ -239,6 +259,7 @@ export class BlockConfigurationModal extends Modal {
 		try {
 			await this.onSubmit({
 				...this.block.attributes,
+				name: this.name.trim() || undefined,
 				defaultLabel: this.defaultLabel,
 				view: this.view,
 				widths: this.widths || undefined,
@@ -253,14 +274,13 @@ export class BlockConfigurationModal extends Modal {
 }
 
 export class RenameVariantModal extends Modal {
-	private oldLabel: string;
 	private newLabel: string;
 	private acrossNote = false;
 	private errorEl?: HTMLElement;
 
 	constructor(
 		app: App,
-		private readonly block: VariantBlock,
+		private readonly oldLabel: string,
 		private readonly onSubmit: (
 			oldLabel: string,
 			newLabel: string,
@@ -268,22 +288,11 @@ export class RenameVariantModal extends Modal {
 		) => Promise<void>,
 	) {
 		super(app);
-		this.oldLabel = block.variants[0]?.label ?? '';
 		this.newLabel = this.oldLabel;
 	}
 
 	onOpen(): void {
-		this.setTitle('Rename variant');
-		new Setting(this.contentEl).setName('Variant').addDropdown((dropdown) => {
-			for (const variant of this.block.variants) {
-				dropdown.addOption(variant.label, variant.label);
-			}
-			dropdown.setValue(this.oldLabel).onChange((value) => {
-				this.oldLabel = value;
-				this.newLabel = value;
-				this.display();
-			});
-		});
+		this.setTitle(`Rename ${this.oldLabel}`);
 		this.display();
 	}
 
@@ -324,6 +333,112 @@ export class RenameVariantModal extends Modal {
 				this.newLabel.trim(),
 				this.acrossNote,
 			);
+			this.close();
+		} catch (error) {
+			this.errorEl?.setText(errorMessage(error));
+		}
+	}
+}
+
+export class AddVariantModal extends Modal {
+	private label: string;
+	private errorEl?: HTMLElement;
+
+	constructor(
+		app: App,
+		private readonly block: VariantBlock,
+		private readonly onSubmit: (label: string) => Promise<void>,
+	) {
+		super(app);
+		this.label = nextLabel(block.variants.length);
+	}
+
+	onOpen(): void {
+		this.setTitle('Add variant');
+		new Setting(this.contentEl).setName('Variant label').addText((text) =>
+			text.setValue(this.label).onChange((value) => {
+				this.label = value;
+			}),
+		);
+		this.errorEl = this.contentEl.createDiv({ cls: 'section-variants-modal-error' });
+		this.errorEl.setAttribute('role', 'alert');
+		new Setting(this.contentEl)
+			.addButton((button) =>
+				button.setButtonText('Cancel').onClick(() => this.close()),
+			)
+			.addButton((button) =>
+				button
+					.setButtonText('Add variant')
+					.setCta()
+					.onClick(() => void this.submit()),
+			);
+	}
+
+	onClose(): void {
+		this.contentEl.empty();
+	}
+
+	private async submit(): Promise<void> {
+		const label = this.label.trim();
+		if (!label || /[\r\n]/u.test(label)) {
+			this.errorEl?.setText('Enter a nonempty label on one line.');
+			return;
+		}
+		if (
+			this.block.variants.some(
+				(variant) => variant.normalizedLabel === normalizeLabel(label),
+			)
+		) {
+			this.errorEl?.setText('That label already exists in this box.');
+			return;
+		}
+		try {
+			await this.onSubmit(label);
+			this.close();
+		} catch (error) {
+			this.errorEl?.setText(errorMessage(error));
+		}
+	}
+}
+
+export class DeleteVariantConfirmationModal extends Modal {
+	private errorEl?: HTMLElement;
+
+	constructor(
+		app: App,
+		private readonly label: string,
+		private readonly onConfirm: () => Promise<void>,
+	) {
+		super(app);
+	}
+
+	onOpen(): void {
+		this.setTitle(`Delete ${this.label}?`);
+		this.contentEl.createEl('p', {
+			text: `This permanently deletes the ${this.label} variant and all of its content from the note.`,
+		});
+		this.errorEl = this.contentEl.createDiv({ cls: 'section-variants-modal-error' });
+		this.errorEl.setAttribute('role', 'alert');
+		new Setting(this.contentEl)
+			.addButton((button) =>
+				button.setButtonText('Cancel').onClick(() => this.close()),
+			)
+			.addButton((button) =>
+				button
+					.setButtonText('Delete variant')
+					.setClass('mod-warning')
+					.setCta()
+					.onClick(() => void this.confirm()),
+			);
+	}
+
+	onClose(): void {
+		this.contentEl.empty();
+	}
+
+	private async confirm(): Promise<void> {
+		try {
+			await this.onConfirm();
 			this.close();
 		} catch (error) {
 			this.errorEl?.setText(errorMessage(error));

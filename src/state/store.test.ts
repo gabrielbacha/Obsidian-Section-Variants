@@ -191,6 +191,24 @@ describe('state identity migration', () => {
 		expect(store.resolve('Note.md', after).selectedLabel).toBe('Alpha');
 	});
 
+	it('rekeys state and removes references to a deleted variant', async () => {
+		const store = await createStore();
+		const before = parseNote(
+			blockSource().replace('::: B\nTwo\n:::', '::: B\nTwo\n:::\n::: C\nThree\n:::'),
+		).blocks[0]!;
+		const after = parseNote(blockSource().replace('::: B\nTwo\n:::', '::: C\nThree\n:::')).blocks[0]!;
+		store.setSelectedLabel('Note.md', before, 'B');
+		store.toggleHidden('Note.md', before, 'B');
+		store.saveHidden('Note.md', before);
+		store.setEditingVariant('Note.md', before, 'B');
+
+		store.migrateDeletedVariant('Note.md', before, after, 'B');
+
+		expect(store.resolve('Note.md', after).selectedLabel).toBe('A');
+		expect(store.resolve('Note.md', after).hiddenLabels.has('b')).toBe(false);
+		expect(store.getEditingVariant('Note.md', after)).toBeUndefined();
+	});
+
 	it('full global following clears local and authored modes together', async () => {
 		const store = await createStore();
 		const block = parseNote(blockSource()).blocks[0]!;

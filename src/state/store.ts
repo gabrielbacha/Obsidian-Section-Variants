@@ -260,6 +260,35 @@ export class StateStore {
 		this.changed({ scope: 'note', path });
 	}
 
+	migrateDeletedVariant(
+		path: string,
+		before: VariantBlock,
+		after: VariantBlock,
+		label: string,
+	): void {
+		this.rekeyBlockStateInternal(path, before.identityKey, after.identityKey);
+		const normalized = normalizeLabel(label);
+		const note = this.getNote(path);
+		const state = note?.blocks[after.identityKey];
+		if (state?.selectedLabel && normalizeLabel(state.selectedLabel) === normalized) {
+			delete state.selectedLabel;
+		}
+		if (state?.savedHiddenLabels) {
+			state.savedHiddenLabels = state.savedHiddenLabels.filter(
+				(item) => normalizeLabel(item) !== normalized,
+			);
+			if (state.savedHiddenLabels.length === 0) delete state.savedHiddenLabels;
+		}
+		if (note) pruneBlockState(note, after.identityKey);
+		const key = sessionKey(path, after.identityKey);
+		this.sessionHidden.get(key)?.delete(normalized);
+		const editing = this.editingVariants.get(key);
+		if (editing && normalizeLabel(editing) === normalized) {
+			this.editingVariants.delete(key);
+		}
+		this.changed({ scope: 'note', path });
+	}
+
 	resetBlock(path: string, block: VariantBlock): void {
 		const note = this.getNote(path, true) as PersistedNoteState;
 		const state = ensureBlockState(note, block.identityKey);

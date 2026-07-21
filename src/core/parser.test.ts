@@ -5,7 +5,7 @@ import { normalizeLabel } from './types';
 describe('parseNote', () => {
 	it('parses shorthand and explicit variants', () => {
 		const source = [
-			':::: {.variants #topic view="columns" default="Long label"}',
+			':::: {.variants #topic name="Audience copy" view="columns" default="Long label"}',
 			'',
 			'::: A',
 			'First',
@@ -23,6 +23,7 @@ describe('parseNote', () => {
 		expect(block?.valid).toBe(true);
 		expect(block?.attributes).toMatchObject({
 			id: 'topic',
+			name: 'Audience copy',
 			view: 'columns',
 			defaultLabel: 'Long label',
 		});

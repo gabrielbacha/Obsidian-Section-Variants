@@ -11,6 +11,7 @@ describe('serializeContainerOpening', () => {
 		expect(
 			serializeContainerOpening(4, {
 				id: 'topic',
+				name: 'Audience copy',
 				view: 'columns',
 				defaultLabel: 'Long label',
 				widths: '40% 60%',
@@ -18,7 +19,7 @@ describe('serializeContainerOpening', () => {
 				responsive: 'scroll',
 			}),
 		).toBe(
-			':::: {.variants #topic view="columns" default="Long label" widths="40% 60%" min-width="320px" responsive="scroll"}',
+			':::: {.variants #topic name="Audience copy" view="columns" default="Long label" widths="40% 60%" min-width="320px" responsive="scroll"}',
 		);
 	});
 });
@@ -35,15 +36,19 @@ describe('serializeVariantsBlock', () => {
 	it('generates Pandoc-valid shorthand and explicit labels', () => {
 		const serialized = serializeVariantsBlock({
 			labels: ['A', 'Long label'],
+			name: 'Campaign copy',
 			defaultLabel: 'Long label',
 			view: 'columns',
 			responsive: 'scroll',
 		});
 
-		expect(serialized.markdown).toContain(':::: {.variants view="columns" default="Long label" responsive="scroll"}');
+		expect(serialized.markdown).toContain(':::: {.variants name="Campaign copy" view="columns" default="Long label" responsive="scroll"}');
 		expect(serialized.markdown).toContain('::: A');
 		expect(serialized.markdown).toContain('::: {.variant label="Long label"}');
 		expect(parseNote(serialized.markdown).roots[0]?.valid).toBe(true);
+		expect(parseNote(serialized.markdown).roots[0]?.attributes.name).toBe(
+			'Campaign copy',
+		);
 	});
 
 	it('escapes explicit label values', () => {

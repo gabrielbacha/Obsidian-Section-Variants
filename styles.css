@@ -216,6 +216,18 @@
 	border-radius: var(--radius-s);
 }
 
+.section-variants-block-name {
+	grid-column: 1 / -1;
+	min-width: 0;
+	margin-block-end: var(--size-4-2);
+	overflow: hidden;
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-semibold);
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
 .section-variants-view-columns {
 	display: grid;
 	grid-template-columns: repeat(
@@ -274,7 +286,7 @@
 
 .section-variants-column-header {
 	display: flex;
-	align-items: center;
+	align-items: flex-start;
 	justify-content: space-between;
 	gap: var(--size-2-2);
 	margin-block-end: var(--size-4-2);
@@ -296,6 +308,17 @@
 	flex: 0 0 auto;
 	align-items: center;
 	gap: var(--size-2-1);
+}
+
+.section-variants-view-toggle
+	> .section-variants-panel
+	> .section-variants-column-header
+	> .section-variants-column-actions,
+.section-variants-view-columns
+	> .section-variants-panel:not(.section-variants-column-later-row)
+	> .section-variants-column-header
+	> .section-variants-column-actions {
+	margin-block-start: var(--size-4-3);
 }
 
 .section-variants-column-actions button {

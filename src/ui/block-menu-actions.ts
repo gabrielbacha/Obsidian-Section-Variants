@@ -1,6 +1,8 @@
 export const BLOCK_MENU_ACTIONS = [
 	'Follow global state',
 	'Reset to authored defaults',
-	'Configure defaults',
+	'Configure box',
+	'Add variant',
+	'Delete variant',
 	'Rename variant',
 ] as const;
