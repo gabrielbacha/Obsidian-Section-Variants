@@ -176,6 +176,7 @@ export class StickyControlManager {
 				this.host.store.toggleAllColumnsAcrossNote(path, parsed);
 			});
 		}
+		createControlDivider(reveal);
 		const globalFollowing = reveal.createEl('button', {
 			type: 'button',
 			cls: 'clickable-icon section-variants-global-follow-toggle',
@@ -205,6 +206,7 @@ export class StickyControlManager {
 				`${result.applied} block${result.applied === 1 ? '' : 's'} now ${following ? 'follow global state' : 'use block-specific state'}.`,
 			);
 		});
+		createControlDivider(reveal);
 		createSegmentedControl(reveal, {
 			cls: 'section-variants-view-modes',
 			ariaLabel: 'Apply view across note',
@@ -299,6 +301,13 @@ export class StickyControlManager {
 		);
 		menu.showAtMouseEvent(event);
 	}
+}
+
+function createControlDivider(parent: HTMLElement): void {
+	parent.createSpan({
+		cls: 'section-variants-control-divider',
+		attr: { role: 'separator', 'aria-orientation': 'vertical' },
+	});
 }
 
 function titleCase(value: string): string {

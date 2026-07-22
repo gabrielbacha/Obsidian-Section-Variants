@@ -40,7 +40,7 @@ describe('presentation safety selectors', () => {
 			/\.section-variants-global-follow-toggle\[aria-pressed='true'\]\s*\{[^}]*background:/su,
 		);
 		expect(CSS).toMatch(
-			/button\.section-variants-global-follow-toggle\s*\{[^}]*border:\s*1px solid/su,
+			/button\.section-variants-global-follow-toggle\s*\{[^}]*box-sizing:\s*border-box;[^}]*border:\s*1px solid/su,
 		);
 	});
 
@@ -49,6 +49,12 @@ describe('presentation safety selectors', () => {
 			/\.section-variants-sticky-control\s*>\s*\.section-variants-reveal-controls\s*\{[^}]*right:\s*100%;[^}]*padding-inline-end:\s*var\(--size-2-1\)/su,
 		);
 		expect(CSS).not.toContain('right: calc(100% + var(--size-2-1))');
+	});
+
+	it('visually separates global control groups', () => {
+		expect(CSS).toMatch(
+			/\.section-variants-control-divider\s*\{[^}]*width:\s*1px;[^}]*height:\s*14px;[^}]*margin-inline:\s*var\(--size-2-1\)/su,
+		);
 	});
 
 	it('keeps attached context submenus viewport-positioned and touch accessible', () => {

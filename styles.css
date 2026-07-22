@@ -46,6 +46,7 @@
 	flex: 0 0 auto;
 	width: 1px;
 	height: 14px;
+	margin-inline: var(--size-2-1);
 	background: var(--background-modifier-border);
 }
 
@@ -60,6 +61,7 @@
 }
 
 button.section-variants-global-follow-toggle {
+	box-sizing: border-box;
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-s);
 }

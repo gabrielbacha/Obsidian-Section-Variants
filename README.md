@@ -93,3 +93,7 @@ npm run lint
 ```
 
 `npm run check` runs all release gates. The production release consists of `main.js`, `manifest.json`, and `styles.css`.
+
+## License
+
+Section Variants is licensed under the [Zero-Clause BSD license](LICENSE).
