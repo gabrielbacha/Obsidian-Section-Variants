@@ -2,6 +2,16 @@
 
 Section Variants lets you switch, compare, and manage parallel versions of a Markdown section without splitting them across notes.
 
+## Screenshots
+
+### Compare variants side by side
+
+![Section Variants showing Customer, Executive, and Technical content side by side in Columns view](Screenshot1.png)
+
+### Switch audiences and control each block
+
+![Section Variants showing audience variants and contextual block controls](Screenshot2.png)
+
 ## Syntax
 
 Use a Pandoc fenced div containing two or more labeled variant divs:
