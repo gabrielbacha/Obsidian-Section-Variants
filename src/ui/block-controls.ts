@@ -26,7 +26,7 @@ export function createBlockControls({
 	createVariantMarker(parent, {
 		ariaLabel: 'Open variants menu',
 		tooltip: blockMarkerTooltip(host, path, block),
-		differs: state.differsFromAuthored && host.store.settings.showIndicators,
+		followingGlobal: host.store.isFollowingGlobalState(path, block),
 		onClick: (event) => openBlockMenu(host, path, block, event),
 	});
 	const reveal = parent.createDiv({ cls: 'section-variants-reveal-controls' });

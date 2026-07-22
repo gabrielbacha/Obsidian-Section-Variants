@@ -66,7 +66,7 @@ export class SectionVariantsSettingTab extends PluginSettingTab {
 			},
 			definitionToggle(
 				'Show default-difference indicators',
-				'Show a subtle indicator when the current label or view differs from authored defaults.',
+				'Show a Modified badge beside Reset to authored defaults when the current state differs.',
 				'showIndicators',
 			),
 		];

@@ -6,6 +6,7 @@ export interface AttachedMenuItem {
 	checked?: boolean;
 	disabled?: boolean;
 	warning?: boolean;
+	badge?: string;
 	/** Keep this menu and its attached parents open after applying a choice. */
 	keepOpen?: boolean;
 	onSelect?: () => void;
@@ -241,6 +242,12 @@ function createMenu(
 			setIcon(icon, item.icon);
 		}
 		menuItem.createSpan({ cls: 'menu-item-title', text: item.label });
+		if (item.badge) {
+			menuItem.createSpan({
+				cls: 'section-variants-context-menu-badge',
+				text: item.badge,
+			});
+		}
 		if (item.checked !== undefined) {
 			const checkbox = menuItem.createSpan({
 				cls: 'section-variants-context-menu-checkbox',

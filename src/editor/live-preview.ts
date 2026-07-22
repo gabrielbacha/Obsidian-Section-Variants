@@ -292,7 +292,7 @@ class LiveBlockWidget extends WidgetType {
 			state.view,
 			block.attributes.name ?? '',
 			String(state.differsFromAuthored),
-			String(host.store.settings.showIndicators),
+			String(host.store.isFollowingGlobalState(path, block)),
 			state.responsive,
 			state.minWidth,
 			state.widths ?? '',

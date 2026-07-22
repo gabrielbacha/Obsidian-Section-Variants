@@ -114,6 +114,9 @@ export class StickyControlManager {
 		const differs = blocks.some(
 			(block) => states.get(block)?.differsFromAuthored,
 		);
+		const allFollowingGlobal = blocks.every((block) =>
+			this.host.store.isFollowingGlobalState(path, block),
+		);
 		const reveal = control.createDiv({ cls: 'section-variants-reveal-controls' });
 		createSegmentedControl(reveal, {
 			cls: 'section-variants-labels',
@@ -173,6 +176,19 @@ export class StickyControlManager {
 				this.host.store.toggleAllColumnsAcrossNote(path, parsed);
 			});
 		}
+		const forceGlobal = reveal.createEl('button', {
+			type: 'button',
+			cls: 'clickable-icon section-variants-force-global',
+			attr: { 'aria-label': 'Force global state everywhere' },
+		});
+		setIcon(forceGlobal, 'combine');
+		setTooltip(forceGlobal, 'Force global state everywhere');
+		forceGlobal.addEventListener('click', () => {
+			const result = this.host.store.followGlobalAcrossNote(path, parsed);
+			new Notice(
+				`${result.applied} block${result.applied === 1 ? '' : 's'} now follow global state.`,
+			);
+		});
 		createSegmentedControl(reveal, {
 			cls: 'section-variants-view-modes',
 			ariaLabel: 'Apply view across note',
@@ -184,8 +200,8 @@ export class StickyControlManager {
 		});
 		createVariantMarker(control, {
 			ariaLabel: 'Open note variants menu',
-			tooltip: `${activeLabel ?? 'Mixed'} · ${activeView ? titleCase(activeView) : 'Mixed'}${differs ? ' · differs from defaults' : ''}`,
-			differs: differs && this.host.store.settings.showIndicators,
+			tooltip: `${activeLabel ?? 'Mixed'} · ${activeView ? titleCase(activeView) : 'Mixed'} · ${allFollowingGlobal ? 'all following global' : 'local block state present'}${differs ? ' · differs from defaults' : ''}`,
+			followingGlobal: allFollowingGlobal,
 			mixed: currentLabels.size > 1 || views.size > 1,
 			onClick: (event) => this.openMenu(event, path, parsed, activeView),
 		});

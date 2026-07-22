@@ -283,15 +283,15 @@ Clicking controls must not rewrite Markdown, except when the user has opted into
 Current UI state resolves in this order:
 
 1. Session-only state
-2. Persisted per-block UI state
-3. Compatible note-wide state
+2. Compatible note-wide state when global following is enabled
+3. Persisted block-specific label and view state
 4. Authored Markdown defaults
 5. Vault-wide plugin settings
 6. Built-in defaults
 
 Markdown attributes define authored defaults; they do not prevent temporary or persisted UI selections from overriding those defaults.
 
-Resetting a block sets independent authored markers for its label and view, so an existing note-wide value is ignored without copying and freezing the literal authored value. A local label or view choice opts the block out of note-wide changes and snapshots both current dimensions. **Follow global state** is exposed as a checked menu item and is on by default. Turning it on clears local overrides and authored-reset markers; turning it off snapshots the currently resolved label and view. The opt-out is persisted, so later note-wide actions do not silently re-enable following.
+Global state and block-specific state are persisted as separate layers. A local label or view choice opts that block out of global following and changes only the corresponding local dimension. Enabling **Follow global state** hides the local layer without deleting it; disabling following restores the exact saved local label and view. If a compatible global dimension is unavailable, the saved local dimension remains visible. **Reset to authored defaults** resets the local layer and opts the block out of global following. The note-wide force action enables following on every valid block without erasing any local layer.
 
 Source mutations return old/new block identity mappings. Stable-ID creation and label rename atomically migrate persisted block state, session-hidden columns, editing state, selected labels, and affected note-wide labels before data is flushed. Label normalization is deterministic `trim().toLowerCase()`; schema migration attempts recovery of older locale-sensitive fingerprint keys when they can be reproduced.
 
@@ -303,20 +303,22 @@ When no saved state exists, it uses authored defaults.
 
 A command resets all blocks to authored defaults.
 
-## 11. Default-difference indicator
+## 11. State indicators
 
-When current state differs from the authored default, the marker shows a subtle dot.
+The blue dot on a block marker means only that the block is following global state. It is absent for block-specific state.
 
-The sticky note control also shows an indicator when any block differs.
+When current state differs from the authored default, the context menu shows a visually distinct **Modified** badge next to **Reset to authored defaults**. The default-difference setting controls this badge rather than the blue marker dot.
 
 When every valid block uses Columns, the sticky label buttons control note-wide column visibility rather than the Toggle selection. A label visible in every matching block hides everywhere when selected; a mixed or hidden label becomes visible everywhere.
 
 The same Columns state exposes one all-columns visibility toggle. With every column visible it hides all columns in all valid blocks; when any column is hidden it restores every column. The action is session state and does not rewrite authored visibility.
 
+The sticky global control also exposes **Force global state everywhere**. It switches every valid block to its note-wide layer in one action while preserving each block’s saved local layer for later restoration.
+
 The concise marker tooltip reports the useful state on one line, for example:
 
 ```text
-B · Columns · default A / Toggle
+B · Columns · Following global · default A / Toggle
 ```
 
 No detailed text is shown until hover or focus.

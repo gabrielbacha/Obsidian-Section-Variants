@@ -28,7 +28,13 @@ describe('presentation safety selectors', () => {
 
 	it('gives the global all-columns toggle a 44px touch target', () => {
 		expect(CSS).toMatch(
-			/body\.is-mobile \.section-variants-add-variant,[\s\S]*section-variants-toggle-all-columns\s*\{[^}]*min-width:\s*44px/su,
+			/body\.is-mobile \.section-variants-add-variant,[^{]*\.section-variants-toggle-all-columns,[^{]*\{[^}]*min-width:\s*44px/su,
+		);
+	});
+
+	it('gives the force-global control a 44px touch target', () => {
+		expect(CSS).toMatch(
+			/body\.is-mobile \.section-variants-add-variant,[^{]*\.section-variants-force-global\s*\{[^}]*min-width:\s*44px/su,
 		);
 	});
 
@@ -56,6 +62,14 @@ describe('presentation safety selectors', () => {
 		);
 		expect(CSS).toMatch(
 			/\.section-variants-context-menu-item\[aria-checked='true'\][\s\S]*\.section-variants-context-menu-checkbox\s*\{[^}]*background:\s*var\(--interactive-accent\)/su,
+		);
+	});
+
+	it('reserves the blue marker dot for global following', () => {
+		expect(CSS).toContain('.section-variants-marker.is-following-global::after');
+		expect(CSS).not.toContain('.section-variants-marker.has-difference::after');
+		expect(CSS).toMatch(
+			/\.section-variants-context-menu-badge\s*\{[^}]*color:\s*var\(--text-warning\)/su,
 		);
 	});
 

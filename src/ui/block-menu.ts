@@ -19,6 +19,7 @@ export function openBlockMenu(
 ): void {
 	const origin = event.currentTarget as HTMLElement | null;
 	const followingGlobal = host.store.isFollowingGlobalState(path, block);
+	const state = host.store.resolve(path, block);
 	const responsive = block.attributes.responsive ?? 'responsive';
 	const authoredLabel = effectiveAuthoredLabel(block);
 	const authoredView = effectiveAuthoredView(
@@ -141,6 +142,10 @@ export function openBlockMenu(
 		{
 			label: BLOCK_MENU_ACTIONS[9],
 			icon: 'rotate-ccw',
+			badge:
+				state.differsFromAuthored && host.store.settings.showIndicators
+					? 'Modified'
+					: undefined,
 			onSelect: () => host.store.resetBlock(path, block),
 		},
 	]);
@@ -152,7 +157,10 @@ export function blockMarkerTooltip(
 	block: VariantBlock,
 ): string {
 	const state = host.store.resolve(path, block);
-	const current = `${block.attributes.name ? `${block.attributes.name} · ` : ''}${state.selectedLabel} · ${viewLabel(state.view)}`;
+	const scope = host.store.isFollowingGlobalState(path, block)
+		? 'Following global'
+		: 'Local state';
+	const current = `${block.attributes.name ? `${block.attributes.name} · ` : ''}${state.selectedLabel} · ${viewLabel(state.view)} · ${scope}`;
 	if (!state.differsFromAuthored) return current;
 	return `${current} · default ${effectiveAuthoredLabel(block)} / ${viewLabel(
 		effectiveAuthoredView(block, host.store.settings.defaultView),

@@ -9,7 +9,8 @@
 - Confirm the menu order is **Add variant**, **Rename variant**, **Delete variant**, separator, **Box name**, **Authored default**, **Authored view**, **Edit column relative widths**, **Narrow-screen layout**, separator, **Follow global state**, and **Reset to authored defaults**.
 - Hover or focus **Narrow-screen layout** and confirm its attached submenu checks exactly one of **Wrap into rows**, **Stack vertically**, and **Scroll horizontally**. Change each option and verify the open note updates immediately and Undo restores the previous source.
 - Select several choices in **Authored default**, **Authored view**, and **Narrow-screen layout** without dismissing the menu. Confirm each submenu remains attached, moves its check immediately, and the rendered block changes without reloading. Move between submenus and verify their latest checks are retained.
-- Confirm **Follow global state** has an obvious right-aligned checkbox in both states—empty when off and accent-filled with a tick when on. Turn it off, change the note-wide state, and verify the block remains frozen locally; turn it on again and verify the block resumes following.
+- Set a distinct local label/view, enable **Follow global state**, then change the global label/view. Confirm the block follows globally while retaining its local layer. Disable following and verify the exact earlier local label/view returns. Repeat after reopening the note.
+- Confirm the block marker’s blue dot appears exactly when **Follow global state** is checked. Change away from authored defaults and confirm the blue dot does not represent that difference; instead, **Reset to authored defaults** shows a distinct **Modified** badge in the menu.
 - Hover and keyboard-focus Rename/Delete; verify their variant submenus open without a click, touch the parent menu, flip inside narrow/pop-out viewports, support arrow keys/Escape, and remain 44px on mobile.
 - Give a box a name during insertion and through the inline **Box name** submenu field; verify Enter writes it immediately, clearing the field removes the attribute, and other authored settings remain unchanged. Change **Authored default** and **Authored view** from their checked submenus. Confirm the name aligns with the controls without creating unused grid tracks.
 - Open **Edit column relative widths**, change ratios, and verify it is the only box-configuration dialog. Equal ratios restore equal-width columns.
@@ -20,6 +21,7 @@
 - Verify the note-wide control sits above Obsidian's actual status bar, stays inside bottom/right safe areas, and expands left. Resize and show/hide the status bar in main and pop-out windows.
 - Put every box in Columns view and use the note-wide label buttons. Confirm a fully visible label hides in every matching box, a mixed/hidden label becomes visible everywhere, and boxes without that label are unchanged.
 - In note-wide Columns view, use the eye toggle to hide every column in every valid box. Confirm it changes to **Show all columns**, restores all columns on the next click, clears active inline editors when hiding, and remains a 44px touch target on mobile.
+- Opt several blocks out of global following, then select **Force global state everywhere** in the note-wide control. Confirm every block follows immediately and that opting one out again restores its previously saved local state.
 
 ## Formatted Live Preview editing
 

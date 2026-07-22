@@ -51,7 +51,8 @@
 
 .section-variants-add-variant,
 .section-variants-restore-columns,
-.section-variants-toggle-all-columns {
+.section-variants-toggle-all-columns,
+.section-variants-force-global {
 	flex: 0 0 auto;
 	width: 22px;
 	height: 22px;
@@ -232,6 +233,16 @@
 	height: 13px;
 }
 
+.section-variants-context-menu-badge {
+	flex: 0 0 auto;
+	margin-inline-start: auto;
+	padding: 1px var(--size-2-2);
+	border-radius: var(--radius-s);
+	background: var(--background-modifier-error-hover);
+	color: var(--text-warning);
+	font-size: var(--font-ui-smaller);
+}
+
 .section-variants-submenu-arrow {
 	margin-inline-start: auto;
 }
@@ -263,7 +274,7 @@ body.is-mobile .section-variants-context-menu-input {
 	color: var(--text-normal);
 }
 
-.section-variants-marker.has-difference::after {
+.section-variants-marker.is-following-global::after {
 	position: absolute;
 	top: -2px;
 	right: -2px;
@@ -556,7 +567,8 @@ body.is-mobile .section-variants-segment,
 body.is-mobile .section-variants-marker,
 body.is-mobile .section-variants-add-variant,
 body.is-mobile .section-variants-restore-columns,
-body.is-mobile .section-variants-toggle-all-columns {
+body.is-mobile .section-variants-toggle-all-columns,
+body.is-mobile .section-variants-force-global {
 	min-height: 44px;
 }
 
@@ -571,7 +583,8 @@ body.is-mobile .section-variants-root {
 
 body.is-mobile .section-variants-add-variant,
 body.is-mobile .section-variants-restore-columns,
-body.is-mobile .section-variants-toggle-all-columns {
+body.is-mobile .section-variants-toggle-all-columns,
+body.is-mobile .section-variants-force-global {
 	min-width: 44px;
 }
 
@@ -586,6 +599,7 @@ body.is-mobile .section-variants-reveal-controls {
 	.section-variants-add-variant,
 	.section-variants-restore-columns,
 	.section-variants-toggle-all-columns,
+	.section-variants-force-global,
 	.section-variants-column-header button {
 		min-width: 44px;
 		min-height: 44px;

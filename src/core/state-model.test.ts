@@ -38,7 +38,9 @@ describe('state model', () => {
 		if (!block) throw new Error('Missing fixture block');
 
 		expect(resolveBlockState(block, note, DEFAULT_SETTINGS).selectedLabel).toBe('B');
-		ensureBlockState(note, block.identityKey).selectedLabel = 'A';
+		const local = ensureBlockState(note, block.identityKey);
+		local.selectedLabel = 'A';
+		local.globalMode = 'local';
 		expect(resolveBlockState(block, note, DEFAULT_SETTINGS).selectedLabel).toBe('A');
 	});
 
@@ -47,7 +49,7 @@ describe('state model', () => {
 		const note = createNoteState();
 		note.globalLabel = 'A';
 
-		const result = applyGlobalLabel(note, parsed, DEFAULT_SETTINGS, 'B');
+		const result = applyGlobalLabel(note, parsed, 'B');
 
 		expect(result).toEqual({ applied: 1, skipped: 1 });
 		expect(resolveBlockState(parsed.blocks[0]!, note, DEFAULT_SETTINGS).selectedLabel).toBe('B');
@@ -94,6 +96,7 @@ describe('state model', () => {
 		const state = ensureBlockState(note, block.identityKey);
 		state.labelMode = 'authored';
 		state.viewMode = 'authored';
+		state.globalMode = 'local';
 
 		expect(resolveBlockState(block, note, DEFAULT_SETTINGS)).toMatchObject({
 			selectedLabel: 'A',
@@ -107,7 +110,7 @@ describe('state model', () => {
 		});
 	});
 
-	it('global actions clear the corresponding authored marker', () => {
+	it('global actions preserve the separate local state layer', () => {
 		const parsed = parseNote(SOURCE);
 		const note = createNoteState();
 		for (const block of parsed.blocks) {
@@ -116,11 +119,13 @@ describe('state model', () => {
 			state.viewMode = 'authored';
 		}
 
-		applyGlobalLabel(note, parsed, DEFAULT_SETTINGS, 'B');
-		applyGlobalView(note, parsed, 'columns');
+		applyGlobalLabel(note, parsed, 'B');
+		applyGlobalView(note, 'columns');
 
-		expect(note.blocks[parsed.blocks[0]!.identityKey]?.labelMode).toBeUndefined();
-		expect(note.blocks[parsed.blocks[0]!.identityKey]?.viewMode).toBeUndefined();
+		expect(note.blocks[parsed.blocks[0]!.identityKey]).toMatchObject({
+			labelMode: 'authored',
+			viewMode: 'authored',
+		});
 	});
 
 	it('excludes invalid blocks from global result counts and mutations', () => {
@@ -131,7 +136,7 @@ describe('state model', () => {
 		const note = createNoteState();
 		ensureBlockState(note, invalid.identityKey).labelMode = 'authored';
 
-		const result = applyGlobalLabel(note, parsed, DEFAULT_SETTINGS, 'A');
+		const result = applyGlobalLabel(note, parsed, 'A');
 
 		expect(result.applied + result.skipped).toBe(2);
 		expect(note.blocks[invalid.identityKey]?.labelMode).toBe('authored');

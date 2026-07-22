@@ -5,7 +5,6 @@ import {
 	createNoteState,
 	DEFAULT_SETTINGS,
 	ensureBlockState,
-	PersistedBlockState,
 	PersistedNoteState,
 	pruneBlockState,
 	ResolvedBlockState,
@@ -77,10 +76,11 @@ export class StateStore {
 	}
 
 	setSelectedLabel(path: string, block: VariantBlock, label: string): void {
-		const state = this.localizeBlock(path, block);
+		const note = this.getNote(path, true) as PersistedNoteState;
+		const state = ensureBlockState(note, block.identityKey);
 		state.selectedLabel = label;
+		state.globalMode = 'local';
 		delete state.labelMode;
-		delete state.viewMode;
 		this.changed({ scope: 'block', path, blockKey: block.identityKey });
 	}
 
@@ -96,11 +96,7 @@ export class StateStore {
 		const view = note.globalView !== undefined;
 		const state = note.blocks[block.identityKey];
 		if (state) {
-			delete state.selectedLabel;
-			delete state.view;
-			delete state.labelMode;
-			delete state.viewMode;
-			delete state.globalMode;
+			state.globalMode = 'follow';
 			pruneBlockState(note, block.identityKey);
 		}
 		if (resolveBlockState(block, note, this.settings).view !== 'columns') {
@@ -116,14 +112,19 @@ export class StateStore {
 	}
 
 	unfollowGlobalState(path: string, block: VariantBlock): void {
-		this.localizeBlock(path, block);
+		const note = this.getNote(path, true) as PersistedNoteState;
+		ensureBlockState(note, block.identityKey).globalMode = 'local';
+		if (resolveBlockState(block, note, this.settings).view !== 'columns') {
+			this.editingVariants.delete(sessionKey(path, block.identityKey));
+		}
 		this.changed({ scope: 'block', path, blockKey: block.identityKey });
 	}
 
 	setView(path: string, block: VariantBlock, view: ViewMode): void {
-		const state = this.localizeBlock(path, block);
+		const note = this.getNote(path, true) as PersistedNoteState;
+		const state = ensureBlockState(note, block.identityKey);
 		state.view = view;
-		delete state.labelMode;
+		state.globalMode = 'local';
 		delete state.viewMode;
 		if (view !== 'columns') {
 			this.editingVariants.delete(sessionKey(path, block.identityKey));
@@ -137,20 +138,40 @@ export class StateStore {
 		label: string,
 	): { applied: number; skipped: number } {
 		const note = this.getNote(path, true) as PersistedNoteState;
-		const result = applyGlobalLabel(note, parsed, this.settings, label);
+		const result = applyGlobalLabel(note, parsed, label);
 		this.changed({ scope: 'note', path });
 		return result;
 	}
 
 	applyViewAcrossNote(path: string, parsed: ParsedNote, view: ViewMode): void {
 		const note = this.getNote(path, true) as PersistedNoteState;
-		applyGlobalView(note, parsed, view);
-		if (view !== 'columns') {
-			for (const block of parsed.blocks.filter((candidate) => candidate.valid)) {
+		applyGlobalView(note, view);
+		for (const block of parsed.blocks.filter((candidate) => candidate.valid)) {
+			if (resolveBlockState(block, note, this.settings).view !== 'columns') {
 				this.editingVariants.delete(sessionKey(path, block.identityKey));
 			}
 		}
 		this.changed({ scope: 'note', path });
+	}
+
+	followGlobalAcrossNote(
+		path: string,
+		parsed: ParsedNote,
+	): { applied: number } {
+		const note = this.getNote(path, true) as PersistedNoteState;
+		const blocks = parsed.blocks.filter((block) => block.valid);
+		for (const block of blocks) {
+			const state = note.blocks[block.identityKey];
+			if (state) {
+				state.globalMode = 'follow';
+				pruneBlockState(note, block.identityKey);
+			}
+			if (resolveBlockState(block, note, this.settings).view !== 'columns') {
+				this.editingVariants.delete(sessionKey(path, block.identityKey));
+			}
+		}
+		this.changed({ scope: 'note', path });
+		return { applied: blocks.length };
 	}
 
 	toggleHidden(path: string, block: VariantBlock, label: string): void {
@@ -374,21 +395,6 @@ export class StateStore {
 		this.sessionHidden.delete(sessionKey(path, block.identityKey));
 		this.editingVariants.delete(sessionKey(path, block.identityKey));
 		this.changed({ scope: 'block', path, blockKey: block.identityKey });
-	}
-
-	private localizeBlock(
-		path: string,
-		block: VariantBlock,
-	): PersistedBlockState {
-		const resolved = this.resolve(path, block);
-		const note = this.getNote(path, true) as PersistedNoteState;
-		const state = ensureBlockState(note, block.identityKey);
-		state.selectedLabel = resolved.selectedLabel;
-		state.view = resolved.view;
-		state.globalMode = 'local';
-		delete state.labelMode;
-		delete state.viewMode;
-		return state;
 	}
 
 	resetNote(path: string): void {
@@ -659,7 +665,9 @@ function migrateNotes(value: unknown): Record<string, PersistedNoteState> {
 				if (view) block.view = view;
 				if (rawBlock.labelMode === 'authored') block.labelMode = 'authored';
 				if (rawBlock.viewMode === 'authored') block.viewMode = 'authored';
-				if (
+				if (rawBlock.globalMode === 'follow') {
+					block.globalMode = 'follow';
+				} else if (
 					rawBlock.globalMode === 'local' ||
 					typeof rawBlock.selectedLabel === 'string' ||
 					view !== undefined ||

@@ -4,7 +4,7 @@ export interface VariantMarkerOptions {
 	ariaLabel: string;
 	tooltip: string;
 	onClick: (event: MouseEvent) => void;
-	differs?: boolean;
+	followingGlobal?: boolean;
 	mixed?: boolean;
 }
 
@@ -19,7 +19,7 @@ export function createVariantMarker(
 		attr: { 'aria-label': options.ariaLabel },
 	});
 	setIcon(marker, 'layers');
-	marker.toggleClass('has-difference', options.differs ?? false);
+	marker.toggleClass('is-following-global', options.followingGlobal ?? false);
 	marker.toggleClass('is-mixed', options.mixed ?? false);
 	setTooltip(marker, options.tooltip);
 	marker.addEventListener('click', options.onClick);
