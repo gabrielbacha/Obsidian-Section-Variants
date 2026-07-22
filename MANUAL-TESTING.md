@@ -6,7 +6,7 @@
 - Repeatedly type, paste, press Enter, and undo in headings and at the first and last content positions; confirm the complete frame and toolbar never disappear. Repeat with blank variants and LF/CRLF notes in light and dark themes.
 - Confirm only the marker shows at rest on pointer devices; hover and keyboard focus reveal labels, the Add variant button, and Toggle/Columns without clipping in narrow panes or at zoomed text sizes.
 - Confirm touch controls remain visible and at least 44px, long labels scroll safely, and reduced motion disables reveal animation.
-- Confirm the menu order is **Add variant**, **Rename variant**, **Delete variant**, separator, **Box name**, **Authored default**, **Authored view**, **Edit column relative widths**, **Narrow-screen layout**, separator, **Follow global state**, and **Reset to authored defaults**.
+- Confirm the menu order is **Add variant**, **Rename variant**, **Delete variant**, separator, **Box name**, **Authored default**, **Authored view**, **Edit column relative widths**, **Narrow-screen layout**, separator, **Follow global state**, **Reset to authored defaults**, separator, and **Delete box**.
 - Hover or focus **Narrow-screen layout** and confirm its attached submenu checks exactly one of **Wrap into rows**, **Stack vertically**, and **Scroll horizontally**. Change each option and verify the open note updates immediately and Undo restores the previous source.
 - Select several choices in **Authored default**, **Authored view**, and **Narrow-screen layout** without dismissing the menu. Confirm each submenu remains attached, moves its check immediately, and the rendered block changes without reloading. Move between submenus and verify their latest checks are retained.
 - Set a distinct local label/view, enable **Follow global state**, then change the global label/view. Confirm the block follows globally while retaining its local layer. Disable following and verify the exact earlier local label/view returns. Repeat after reopening the note.
@@ -17,11 +17,11 @@
 - Add variants with shorthand-safe and punctuation-bearing labels. Rename by choosing the target from the attached submenu and confirming the new label. Delete from two variants down to one and confirm the box remains rendered and editable; verify deletion is disabled only for the final variant.
 - In Insert/Add dialogs, focus every label field and verify current-note suggestions appear frequency-first, filter case-insensitively, preserve authored casing, and exclude labels already present in that box.
 - Use the `+` beside a block's labels to open Add variant, then add another label and reopen it; confirm every current box label is absent from autocomplete without refreshing the note.
-- Add, rename, delete, and configure a box from Live Preview and Reading View; verify every change appears immediately without reloading and one Undo reverses it.
+- Add, rename, delete, and configure a box from Live Preview and Reading View; verify every change appears immediately without reloading and one Undo reverses it. Delete a complete named and unnamed box, confirm the destructive dialog names the scope clearly, and verify its fences, variants, nested boxes, attached block ID, persisted state, and session editing state are removed without affecting neighboring boxes.
 - Verify the note-wide control sits above Obsidian's actual status bar, stays inside bottom/right safe areas, and expands left. Resize and show/hide the status bar in main and pop-out windows.
 - Put every box in Columns view and use the note-wide label buttons. Confirm a fully visible label hides in every matching box, a mixed/hidden label becomes visible everywhere, and boxes without that label are unchanged.
 - In note-wide Columns view, use the eye toggle to hide every column in every valid box. Confirm it changes to **Show all columns**, restores all columns on the next click, clears active inline editors when hiding, and remains a 44px touch target on mobile.
-- Opt several blocks out of global following, then select **Force global state everywhere** in the note-wide control. Confirm every block follows immediately and that opting one out again restores its previously saved local state.
+- Opt several blocks out of global following, then select the note-wide globe. Confirm it shows a pressed state and every block follows immediately. Select it again and confirm every block restores its previously saved local state.
 
 ## Formatted Live Preview editing
 

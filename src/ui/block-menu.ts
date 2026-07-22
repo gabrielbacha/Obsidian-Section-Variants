@@ -148,6 +148,13 @@ export function openBlockMenu(
 					: undefined,
 			onSelect: () => host.store.resetBlock(path, block),
 		},
+		{ label: '-' },
+		{
+			label: BLOCK_MENU_ACTIONS[10],
+			icon: 'trash-2',
+			warning: true,
+			onSelect: () => host.openDeleteBlock(path, block, origin ?? undefined),
+		},
 	]);
 }
 

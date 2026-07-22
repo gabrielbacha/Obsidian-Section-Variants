@@ -219,6 +219,7 @@ Behavior:
   - add variant
   - rename variant, with an attached hover/focus target submenu and confirmation
   - delete variant, with an attached hover/focus target submenu and destructive confirmation
+  - delete box, with destructive confirmation covering the full container and attached block ID
   - box name and authored-default configuration
   - follow global state
   - reset to authored defaults
@@ -313,7 +314,7 @@ When every valid block uses Columns, the sticky label buttons control note-wide 
 
 The same Columns state exposes one all-columns visibility toggle. With every column visible it hides all columns in all valid blocks; when any column is hidden it restores every column. The action is session state and does not rewrite authored visibility.
 
-The sticky global control also exposes **Force global state everywhere**. It switches every valid block to its note-wide layer in one action while preserving each block’s saved local layer for later restoration.
+The sticky global control also exposes a pressed-state globe toggle. Turning it on switches every valid block to its note-wide layer; turning it off restores every block’s separately saved local layer.
 
 The concise marker tooltip reports the useful state on one line, for example:
 

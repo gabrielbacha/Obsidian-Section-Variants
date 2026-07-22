@@ -154,16 +154,19 @@ export class StateStore {
 		this.changed({ scope: 'note', path });
 	}
 
-	followGlobalAcrossNote(
+	setGlobalFollowingAcrossNote(
 		path: string,
 		parsed: ParsedNote,
+		following: boolean,
 	): { applied: number } {
 		const note = this.getNote(path, true) as PersistedNoteState;
 		const blocks = parsed.blocks.filter((block) => block.valid);
 		for (const block of blocks) {
-			const state = note.blocks[block.identityKey];
+			const state = following
+				? note.blocks[block.identityKey]
+				: ensureBlockState(note, block.identityKey);
 			if (state) {
-				state.globalMode = 'follow';
+				state.globalMode = following ? 'follow' : 'local';
 				pruneBlockState(note, block.identityKey);
 			}
 			if (resolveBlockState(block, note, this.settings).view !== 'columns') {
@@ -379,6 +382,25 @@ export class StateStore {
 		const editing = this.editingVariants.get(key);
 		if (editing && normalizeLabel(editing) === normalized) {
 			this.editingVariants.delete(key);
+		}
+		this.changed({ scope: 'note', path });
+	}
+
+	migrateDeletedBlocks(
+		path: string,
+		removed: readonly VariantBlock[],
+		mappings: ReadonlyArray<{ before: VariantBlock; after: VariantBlock }>,
+	): void {
+		const note = this.getNote(path);
+		// Remove deleted keys before rekeying survivors. A duplicate fingerprint can
+		// shift from `:1` to `:0`, which is also the key of the removed first box.
+		for (const block of removed) {
+			if (note) delete note.blocks[block.identityKey];
+			this.sessionHidden.delete(sessionKey(path, block.identityKey));
+			this.editingVariants.delete(sessionKey(path, block.identityKey));
+		}
+		for (const { before, after } of mappings) {
+			this.rekeyBlockStateInternal(path, before.identityKey, after.identityKey);
 		}
 		this.changed({ scope: 'note', path });
 	}

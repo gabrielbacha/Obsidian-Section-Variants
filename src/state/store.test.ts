@@ -305,7 +305,7 @@ describe('state identity migration', () => {
 		});
 	});
 
-	it('forces every valid block to follow global state without erasing local state', async () => {
+	it('toggles every valid block between global and its saved local state', async () => {
 		const store = await createStore();
 		const parsed = parseNote([blockSource(), blockSource()].join('\n\n'));
 		const [first, second] = parsed.blocks;
@@ -316,7 +316,9 @@ describe('state identity migration', () => {
 		store.getNote('Note.md', true)!.globalLabel = 'B';
 		store.getNote('Note.md', true)!.globalView = 'columns';
 
-		expect(store.followGlobalAcrossNote('Note.md', parsed)).toEqual({ applied: 2 });
+		expect(store.setGlobalFollowingAcrossNote('Note.md', parsed, true)).toEqual({
+			applied: 2,
+		});
 		expect(store.isFollowingGlobalState('Note.md', first)).toBe(true);
 		expect(store.isFollowingGlobalState('Note.md', second)).toBe(true);
 		expect(store.getNote('Note.md')?.blocks[first.identityKey]?.globalMode).toBe(
@@ -327,7 +329,11 @@ describe('state identity migration', () => {
 			view: 'columns',
 		});
 
-		store.unfollowGlobalState('Note.md', first);
+		expect(store.setGlobalFollowingAcrossNote('Note.md', parsed, false)).toEqual({
+			applied: 2,
+		});
+		expect(store.isFollowingGlobalState('Note.md', first)).toBe(false);
+		expect(store.isFollowingGlobalState('Note.md', second)).toBe(false);
 		expect(store.resolve('Note.md', first)).toMatchObject({
 			selectedLabel: 'A',
 			view: 'toggle',
@@ -406,6 +412,31 @@ describe('state identity migration', () => {
 		for (const block of parsed.blocks) {
 			expect(store.resolve('Note.md', block).hiddenLabels.size).toBe(0);
 		}
+	});
+
+	it('removes deleted-box state before rekeying an identical surviving box', async () => {
+		const store = await createStore();
+		const before = parseNote([blockSource(), blockSource()].join('\n\n'));
+		const [removed, survivor] = before.blocks;
+		const after = parseNote(blockSource()).blocks[0];
+		if (!removed || !survivor || !after) throw new Error('Missing fixture blocks');
+		store.setSelectedLabel('Note.md', removed, 'A');
+		store.setSelectedLabel('Note.md', survivor, 'B');
+		store.toggleHidden('Note.md', survivor, 'A');
+		store.setEditingVariant('Note.md', survivor, 'B');
+
+		store.migrateDeletedBlocks(
+			'Note.md',
+			[removed],
+			[{ before: survivor, after }],
+		);
+
+		expect(store.resolve('Note.md', after).selectedLabel).toBe('B');
+		expect(store.resolve('Note.md', after).hiddenLabels.has('a')).toBe(true);
+		expect(store.getEditingVariant('Note.md', after)).toBe('B');
+		expect(Object.keys(store.getNote('Note.md')?.blocks ?? {})).toEqual([
+			after.identityKey,
+		]);
 	});
 });
 

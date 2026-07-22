@@ -423,6 +423,51 @@ export class DeleteVariantConfirmationModal extends Modal {
 	}
 }
 
+export class DeleteBlockConfirmationModal extends Modal {
+	private errorEl?: HTMLElement;
+
+	constructor(
+		app: App,
+		private readonly name: string | undefined,
+		private readonly onConfirm: () => Promise<void>,
+	) {
+		super(app);
+	}
+
+	onOpen(): void {
+		this.setTitle(this.name ? `Delete ${this.name}?` : 'Delete variants box?');
+		this.contentEl.createEl('p', {
+			text: 'This permanently deletes the entire box, every variant, and all of their content from the note.',
+		});
+		this.errorEl = this.contentEl.createDiv({ cls: 'section-variants-modal-error' });
+		this.errorEl.setAttribute('role', 'alert');
+		new Setting(this.contentEl)
+			.addButton((button) =>
+				button.setButtonText('Cancel').onClick(() => this.close()),
+			)
+			.addButton((button) =>
+				button
+					.setButtonText('Delete box')
+					.setClass('mod-warning')
+					.setCta()
+					.onClick(() => void this.confirm()),
+			);
+	}
+
+	onClose(): void {
+		this.contentEl.empty();
+	}
+
+	private async confirm(): Promise<void> {
+		try {
+			await this.onConfirm();
+			this.close();
+		} catch (error) {
+			this.errorEl?.setText(errorMessage(error));
+		}
+	}
+}
+
 function nextLabel(index: number): string {
 	return index < 26 ? String.fromCharCode(65 + index) : `Variant ${index + 1}`;
 }

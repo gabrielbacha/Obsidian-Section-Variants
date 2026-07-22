@@ -12,6 +12,7 @@ import { registerCommands } from './commands';
 import {
 	addVariant,
 	addStableBlockId,
+	deleteBlock,
 	deleteVariant,
 	fixMissingClosers,
 	renameVariant,
@@ -42,6 +43,7 @@ import { StateStore, StoreChange } from './state/store';
 import {
 	AddVariantModal,
 	ColumnRatiosModal,
+	DeleteBlockConfirmationModal,
 	DeleteVariantConfirmationModal,
 	InsertVariantsModal,
 	RenameVariantModal,
@@ -339,6 +341,31 @@ export default class SectionVariantsPlugin
 			await this.store.flush();
 			new Notice(`Deleted ${result.label}.`);
 		}).open();
+	}
+
+	openDeleteBlock(
+		path: string,
+		block: VariantBlock,
+		origin?: HTMLElement,
+	): void {
+		new DeleteBlockConfirmationModal(
+			this.app,
+			block.attributes.name,
+			async () => {
+				const result = await deleteBlock(
+					this.app,
+					path,
+					block,
+					(source) => this.parseFresh(source),
+					this.resolveEditor(path, origin),
+				);
+				this.store.migrateDeletedBlocks(path, result.removed, result.mappings);
+				this.refreshAfterSourceMutation(path, result.source);
+				this.scheduleViewRefresh(path);
+				await this.store.flush();
+				new Notice('Deleted variants box.');
+			},
+		).open();
 	}
 
 	openRenameVariant(

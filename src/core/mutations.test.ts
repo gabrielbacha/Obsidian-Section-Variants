@@ -4,6 +4,7 @@ import type { App } from 'obsidian';
 import {
 	addStableBlockId,
 	addVariant,
+	deleteBlock,
 	deleteVariant,
 	fixMissingClosers,
 	renameVariant,
@@ -470,5 +471,68 @@ describe('deleteVariant', () => {
 		await deleteVariant(app, path, firstBlock(), 'A', parse);
 
 		expect(parse(read()).blocks[0]?.attributes.widths).toBeUndefined();
+	});
+});
+
+describe('deleteBlock', () => {
+	it('deletes the complete box and its attached stable block ID', async () => {
+		const source = `Before.\n\n${TWO_VARIANTS.trimEnd()}\n^variants-stable\n\nAfter.\n`;
+		const { app, path, read, firstBlock } = setup(source);
+
+		const result = await deleteBlock(app, path, firstBlock(), parse);
+
+		expect(result.removed).toHaveLength(1);
+		expect(parse(read()).blocks).toHaveLength(0);
+		expect(read()).toContain('Before.');
+		expect(read()).toContain('After.');
+		expect(read()).not.toContain('Alpha.');
+		expect(read()).not.toContain('variants-stable');
+	});
+
+	it('deletes a nested box without deleting its parent', async () => {
+		const source = [
+			'::::: variants',
+			':::: Parent',
+			'Before child.',
+			':::: variants',
+			'::: ChildA',
+			'One',
+			':::',
+			'::: ChildB',
+			'Two',
+			':::',
+			'::::',
+			'After child.',
+			'::::',
+			':::: Parent2',
+			'Other',
+			'::::',
+			':::::',
+		].join('\n');
+		const { app, path, read } = setup(source);
+		const nested = parse(read()).blocks[1];
+		if (!nested) throw new Error('Expected a nested box.');
+
+		const result = await deleteBlock(app, path, nested, parse);
+
+		expect(result.removed).toEqual([nested]);
+		expect(parse(read()).blocks).toHaveLength(1);
+		expect(parse(read()).blocks[0]?.valid).toBe(true);
+		expect(read()).toContain('Before child.');
+		expect(read()).toContain('After child.');
+		expect(read()).not.toContain('ChildA');
+	});
+
+	it('uses one editor transaction and preserves CRLF line endings', async () => {
+		const source = `Before.\r\n\r\n${TWO_VARIANTS.trimEnd().replace(/\n/gu, '\r\n')}\r\n\r\nAfter.\r\n`;
+		const { app, path, firstBlock } = setup(source);
+		const editor = new FakeEditor(source);
+
+		await deleteBlock(app, path, firstBlock(), parse, editor as never);
+
+		expect(editor.transactionCount).toBe(1);
+		expect(editor.getValue()).not.toMatch(/(?<!\r)\n/gu);
+		expect(editor.getValue()).toContain('Before.\r\n');
+		expect(editor.getValue()).toContain('After.\r\n');
 	});
 });

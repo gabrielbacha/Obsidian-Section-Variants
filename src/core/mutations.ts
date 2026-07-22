@@ -41,6 +41,11 @@ export interface VariantMutationResult
 	label: string;
 }
 
+export interface DeleteBlockMutationResult extends SourceMutationResult {
+	removed: VariantBlock[];
+	mappings: BlockIdentityMapping[];
+}
+
 export async function addVariant(
 	app: App,
 	path: string,
@@ -144,6 +149,51 @@ export async function deleteVariant(
 		return applyEdits(source, edits);
 	}, editor);
 	return { ...mapping, label };
+}
+
+export async function deleteBlock(
+	app: App,
+	path: string,
+	target: VariantBlock,
+	parse: (source: string) => ParsedNote,
+	editor?: Editor,
+): Promise<DeleteBlockMutationResult> {
+	let result: Omit<DeleteBlockMutationResult, 'source'> | undefined;
+	const source = await processSource(app, path, editor, (source) => {
+		const parsed = parse(source);
+		const current = resolveCurrentBlock(target, parsed.blocks);
+		if (!current) {
+			throw new Error('The variants box changed. Reopen the menu and try again.');
+		}
+		if (!current.valid || !current.closing) {
+			throw new Error('Fix this variants box before deleting it.');
+		}
+		const removed = parsed.blocks.filter(
+			(block) =>
+				block.range.from >= current.range.from &&
+				block.range.to <= current.range.to,
+		);
+		const survivors = parsed.blocks.filter((block) => !removed.includes(block));
+		const to = consumeLineBreak(source, current.range.to);
+		const changed = `${source.slice(0, current.range.from)}${source.slice(to)}`;
+		const reparsed = parse(changed);
+		if (reparsed.blocks.length !== survivors.length) {
+			throw new Error('The remaining variants boxes could not be identified after deletion.');
+		}
+		result = {
+			removed,
+			mappings: survivors.map((before, index) => {
+				const after = reparsed.blocks[index];
+				if (!after) {
+					throw new Error('A remaining variants box could not be identified after deletion.');
+				}
+				return { before, after };
+			}),
+		};
+		return changed;
+	});
+	if (!result) throw new Error('The variants box deletion did not complete.');
+	return { ...result, source };
 }
 
 export async function addStableBlockId(
@@ -420,6 +470,11 @@ function applyEdits(
 				`${result.slice(0, edit.from)}${edit.text}${result.slice(edit.to)}`,
 			source,
 		);
+}
+
+function consumeLineBreak(source: string, offset: number): number {
+	if (source.slice(offset, offset + 2) === '\r\n') return offset + 2;
+	return source.charCodeAt(offset) === 10 ? offset + 1 : offset;
 }
 
 /**

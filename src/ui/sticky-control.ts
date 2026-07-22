@@ -176,17 +176,33 @@ export class StickyControlManager {
 				this.host.store.toggleAllColumnsAcrossNote(path, parsed);
 			});
 		}
-		const forceGlobal = reveal.createEl('button', {
+		const globalFollowing = reveal.createEl('button', {
 			type: 'button',
-			cls: 'clickable-icon section-variants-force-global',
-			attr: { 'aria-label': 'Force global state everywhere' },
+			cls: 'clickable-icon section-variants-global-follow-toggle',
+			attr: {
+				'aria-label': allFollowingGlobal
+					? 'Use block-specific state everywhere'
+					: 'Follow global state everywhere',
+				'aria-pressed': String(allFollowingGlobal),
+			},
 		});
-		setIcon(forceGlobal, 'combine');
-		setTooltip(forceGlobal, 'Force global state everywhere');
-		forceGlobal.addEventListener('click', () => {
-			const result = this.host.store.followGlobalAcrossNote(path, parsed);
+		setIcon(globalFollowing, 'globe-2');
+		globalFollowing.toggleClass('is-active', allFollowingGlobal);
+		setTooltip(
+			globalFollowing,
+			allFollowingGlobal
+				? 'Use block-specific state everywhere'
+				: 'Follow global state everywhere',
+		);
+		globalFollowing.addEventListener('click', () => {
+			const following = !allFollowingGlobal;
+			const result = this.host.store.setGlobalFollowingAcrossNote(
+				path,
+				parsed,
+				following,
+			);
 			new Notice(
-				`${result.applied} block${result.applied === 1 ? '' : 's'} now follow global state.`,
+				`${result.applied} block${result.applied === 1 ? '' : 's'} now ${following ? 'follow global state' : 'use block-specific state'}.`,
 			);
 		});
 		createSegmentedControl(reveal, {

@@ -39,6 +39,7 @@ export interface SectionVariantsHost {
 		label: string,
 		origin?: HTMLElement,
 	): void;
+	openDeleteBlock(path: string, block: VariantBlock, origin?: HTMLElement): void;
 	openRenameVariant(
 		path: string,
 		block: VariantBlock,

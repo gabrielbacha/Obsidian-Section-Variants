@@ -11,6 +11,7 @@ export const BLOCK_MENU_ACTIONS = [
 	'Narrow-screen layout',
 	'Follow global state',
 	'Reset to authored defaults',
+	'Delete box',
 ] as const;
 
 export const NARROW_LAYOUT_OPTIONS: ReadonlyArray<{

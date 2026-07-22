@@ -32,9 +32,12 @@ describe('presentation safety selectors', () => {
 		);
 	});
 
-	it('gives the force-global control a 44px touch target', () => {
+	it('gives the global-follow toggle a 44px touch target and a pressed state', () => {
 		expect(CSS).toMatch(
-			/body\.is-mobile \.section-variants-add-variant,[^{]*\.section-variants-force-global\s*\{[^}]*min-width:\s*44px/su,
+			/body\.is-mobile \.section-variants-add-variant,[^{]*\.section-variants-global-follow-toggle\s*\{[^}]*min-width:\s*44px/su,
+		);
+		expect(CSS).toMatch(
+			/\.section-variants-global-follow-toggle\[aria-pressed='true'\]\s*\{[^}]*background:/su,
 		);
 	});
 

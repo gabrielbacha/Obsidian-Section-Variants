@@ -17,6 +17,7 @@ describe('block marker menu contract', () => {
 			'Narrow-screen layout',
 			'Follow global state',
 			'Reset to authored defaults',
+			'Delete box',
 		]);
 	});
 
