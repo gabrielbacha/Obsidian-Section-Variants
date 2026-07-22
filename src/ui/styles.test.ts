@@ -39,6 +39,16 @@ describe('presentation safety selectors', () => {
 		expect(CSS).toMatch(
 			/\.section-variants-global-follow-toggle\[aria-pressed='true'\]\s*\{[^}]*background:/su,
 		);
+		expect(CSS).toMatch(
+			/button\.section-variants-global-follow-toggle\s*\{[^}]*border:\s*1px solid/su,
+		);
+	});
+
+	it('bridges the pointer path between a marker and its revealed controls', () => {
+		expect(CSS).toMatch(
+			/\.section-variants-sticky-control\s*>\s*\.section-variants-reveal-controls\s*\{[^}]*right:\s*100%;[^}]*padding-inline-end:\s*var\(--size-2-1\)/su,
+		);
+		expect(CSS).not.toContain('right: calc(100% + var(--size-2-1))');
 	});
 
 	it('keeps attached context submenus viewport-positioned and touch accessible', () => {

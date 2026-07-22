@@ -59,6 +59,15 @@
 	padding: 3px;
 }
 
+button.section-variants-global-follow-toggle {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+}
+
+button.section-variants-global-follow-toggle:is(:hover, :focus-visible) {
+	border-color: var(--background-modifier-border-hover);
+}
+
 .section-variants-global-follow-toggle[aria-pressed='true'] {
 	background: var(--background-modifier-hover);
 	color: var(--text-normal);
@@ -85,9 +94,10 @@
 	.section-variants-sticky-control > .section-variants-reveal-controls {
 		position: absolute;
 		top: 50%;
-		right: calc(100% + var(--size-2-1));
+		right: 100%;
 		width: max-content;
 		max-width: min(70vw, 720px);
+		padding-inline-end: var(--size-2-1);
 		transform: translateY(-50%);
 	}
 
