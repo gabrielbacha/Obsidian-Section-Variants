@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { parseNote } from './parser';
 import {
 	applyGlobalLabel,
+	applyGlobalResponsive,
 	applyGlobalView,
 	createNoteState,
 	DEFAULT_SETTINGS,
@@ -42,6 +43,23 @@ describe('state model', () => {
 		local.selectedLabel = 'A';
 		local.globalMode = 'local';
 		expect(resolveBlockState(block, note, DEFAULT_SETTINGS).selectedLabel).toBe('A');
+	});
+
+	it('applies the note-wide narrow layout only to global followers', () => {
+		const block = parseNote(SOURCE).blocks[0]!;
+		const note = createNoteState();
+		applyGlobalResponsive(note, 'stack');
+
+		expect(resolveBlockState(block, note, DEFAULT_SETTINGS)).toMatchObject({
+			responsive: 'stack',
+			differsFromAuthored: true,
+		});
+
+		ensureBlockState(note, block.identityKey).globalMode = 'local';
+		expect(resolveBlockState(block, note, DEFAULT_SETTINGS)).toMatchObject({
+			responsive: 'responsive',
+			differsFromAuthored: false,
+		});
 	});
 
 	it('applies a global label and preserves unmatched followers', () => {

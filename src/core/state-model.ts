@@ -41,6 +41,7 @@ export interface PersistedBlockState {
 export interface PersistedNoteState {
 	globalLabel?: string;
 	globalView?: ViewMode;
+	globalResponsive?: ResponsiveMode;
 	stickyVisible?: boolean;
 	blocks: Record<string, PersistedBlockState>;
 }
@@ -77,6 +78,9 @@ export function resolveBlockState(
 	const authoredView = effectiveAuthoredView(block, settings.defaultView);
 	const localView = persisted?.view ?? authoredView;
 	const view = (followingGlobal ? note?.globalView : undefined) ?? localView;
+	const authoredResponsive = block.attributes.responsive ?? 'responsive';
+	const responsive =
+		(followingGlobal ? note?.globalResponsive : undefined) ?? authoredResponsive;
 	const hiddenLabels = new Set(
 		[...(sessionHiddenLabels ?? persisted?.savedHiddenLabels ?? [])].map(
 			normalizeLabel,
@@ -85,13 +89,14 @@ export function resolveBlockState(
 	return {
 		selectedLabel,
 		view,
-		responsive: block.attributes.responsive ?? 'responsive',
+		responsive,
 		minWidth: block.attributes.minWidth ?? settings.defaultMinWidth,
 		widths: block.attributes.widths,
 		hiddenLabels,
 		differsFromAuthored:
 			normalizeLabel(selectedLabel) !== normalizeLabel(authoredLabel) ||
-			view !== authoredView,
+			view !== authoredView ||
+			responsive !== authoredResponsive,
 	};
 }
 
@@ -126,6 +131,13 @@ export function applyGlobalView(
 	view: ViewMode,
 ): void {
 	note.globalView = view;
+}
+
+export function applyGlobalResponsive(
+	note: PersistedNoteState,
+	responsive: ResponsiveMode,
+): void {
+	note.globalResponsive = responsive;
 }
 
 export function ensureBlockState(

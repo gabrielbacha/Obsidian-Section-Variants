@@ -1,6 +1,7 @@
 import { Notice, Plugin } from 'obsidian';
 import {
 	applyGlobalLabel,
+	applyGlobalResponsive,
 	applyGlobalView,
 	createNoteState,
 	DEFAULT_SETTINGS,
@@ -15,6 +16,7 @@ import { randomBytes } from '../core/random';
 import {
 	normalizeLabel,
 	ParsedNote,
+	ResponsiveMode,
 	VariantBlock,
 	ViewMode,
 } from '../core/types';
@@ -154,6 +156,12 @@ export class StateStore {
 		this.changed({ scope: 'note', path });
 	}
 
+	applyResponsiveAcrossNote(path: string, responsive: ResponsiveMode): void {
+		const note = this.getNote(path, true) as PersistedNoteState;
+		applyGlobalResponsive(note, responsive);
+		this.changed({ scope: 'note', path });
+	}
+
 	setGlobalFollowingAcrossNote(
 		path: string,
 		parsed: ParsedNote,
@@ -203,10 +211,12 @@ export class StateStore {
 	): { visible: boolean; applied: number; skipped: number } {
 		const normalized = normalizeLabel(label);
 		const validBlocks = parsed.blocks.filter((block) => block.valid);
-		const matching = validBlocks.filter((block) =>
-			block.variants.some(
-				(variant) => variant.normalizedLabel === normalized,
-			),
+		const matching = validBlocks.filter(
+			(block) =>
+				this.isFollowingGlobalState(path, block) &&
+				block.variants.some(
+					(variant) => variant.normalizedLabel === normalized,
+				),
 		);
 		// Mixed visibility resolves toward showing the column everywhere. Only a
 		// fully visible label toggles off across the note.
@@ -238,7 +248,10 @@ export class StateStore {
 		path: string,
 		parsed: ParsedNote,
 	): { visible: boolean; blocks: number; columns: number } {
-		const blocks = parsed.blocks.filter((block) => block.valid);
+		const blocks = parsed.blocks.filter(
+			(block) =>
+				block.valid && this.isFollowingGlobalState(path, block),
+		);
 		const hasHiddenColumn = blocks.some((block) => {
 			const hidden = this.resolve(path, block).hiddenLabels;
 			return block.variants.some((variant) => hidden.has(variant.normalizedLabel));
@@ -673,6 +686,8 @@ function migrateNotes(value: unknown): Record<string, PersistedNoteState> {
 		}
 		const globalView = migrateViewMode(rawNote.globalView);
 		if (globalView) note.globalView = globalView;
+		const globalResponsive = migrateResponsiveMode(rawNote.globalResponsive);
+		if (globalResponsive) note.globalResponsive = globalResponsive;
 		if (typeof rawNote.stickyVisible === 'boolean') {
 			note.stickyVisible = rawNote.stickyVisible;
 		}
@@ -722,6 +737,12 @@ function isViewMode(value: unknown): value is ViewMode {
 
 function migrateViewMode(value: unknown): ViewMode | undefined {
 	return value === 'auto' ? 'columns' : isViewMode(value) ? value : undefined;
+}
+
+function migrateResponsiveMode(value: unknown): ResponsiveMode | undefined {
+	return value === 'responsive' || value === 'stack' || value === 'scroll'
+		? value
+		: undefined;
 }
 
 function randomToken(): string {

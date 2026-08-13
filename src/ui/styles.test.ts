@@ -32,6 +32,15 @@ describe('presentation safety selectors', () => {
 		);
 	});
 
+	it('gives the separate narrow-layout menu a 44px touch target', () => {
+		expect(CSS).toMatch(
+			/body\.is-mobile \.section-variants-add-variant,[^{]*\.section-variants-narrow-layout-menu,[^{]*\{[^}]*min-width:\s*44px/su,
+		);
+		expect(CSS).toMatch(
+			/@media \(hover: none\), \(pointer: coarse\)[\s\S]*section-variants-narrow-layout-menu[\s\S]*min-height:\s*44px/su,
+		);
+	});
+
 	it('gives the global-follow toggle a 44px touch target and a pressed state', () => {
 		expect(CSS).toMatch(
 			/body\.is-mobile \.section-variants-add-variant,[^{]*\.section-variants-global-follow-toggle\s*\{[^}]*min-width:\s*44px/su,
@@ -40,7 +49,13 @@ describe('presentation safety selectors', () => {
 			/\.section-variants-global-follow-toggle\[aria-pressed='true'\]\s*\{[^}]*background:/su,
 		);
 		expect(CSS).toMatch(
-			/button\.section-variants-global-follow-toggle\s*\{[^}]*box-sizing:\s*border-box;[^}]*border:\s*1px solid/su,
+			/button\.section-variants-global-follow-toggle\s*\{[^}]*box-sizing:\s*border-box;[^}]*border:\s*1px solid var\(--background-modifier-border\)/su,
+		);
+	});
+
+	it('gives the note-wide controller marker an accent border', () => {
+		expect(CSS).toMatch(
+			/\.section-variants-sticky-control\s*>\s*\.section-variants-marker\s*\{[^}]*border-color:\s*var\(--interactive-accent\)/su,
 		);
 	});
 
@@ -54,6 +69,15 @@ describe('presentation safety selectors', () => {
 	it('visually separates global control groups', () => {
 		expect(CSS).toMatch(
 			/\.section-variants-control-divider\s*\{[^}]*width:\s*1px;[^}]*height:\s*14px;[^}]*margin-inline:\s*var\(--size-2-1\)/su,
+		);
+	});
+
+	it('keeps inactive view segments transparent and only the active one filled', () => {
+		expect(CSS).toMatch(
+			/button\.section-variants-segment\s*\{[^}]*background:\s*transparent/su,
+		);
+		expect(CSS).toMatch(
+			/button\.section-variants-segment\.is-active\s*\{[^}]*background:\s*var\(--background-modifier-hover\)/su,
 		);
 	});
 

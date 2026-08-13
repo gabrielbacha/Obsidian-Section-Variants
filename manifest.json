@@ -1,9 +1,9 @@
 {
 	"id": "section-variants",
 	"name": "Section Variants",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"minAppVersion": "1.12.0",
 	"description": "Switch, compare, and manage parallel versions of Markdown sections within one note.",
-	"author": "Gabriel",
+	"author": "Gabriel Bacha",
 	"isDesktopOnly": false
 }

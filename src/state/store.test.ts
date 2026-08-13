@@ -26,6 +26,7 @@ describe('state migration', () => {
 				'Note.md': {
 					globalLabel: 'B',
 					globalView: 'auto',
+					globalResponsive: 'scroll',
 					stickyVisible: false,
 					inactiveBehavior: 'collapsed',
 					blocks: {
@@ -54,6 +55,7 @@ describe('state migration', () => {
 		expect(migrated.data.notes['Note.md']).toEqual({
 			globalLabel: 'B',
 			globalView: 'columns',
+			globalResponsive: 'scroll',
 			stickyVisible: false,
 			blocks: {
 				'block:stable': {
@@ -292,6 +294,18 @@ describe('state identity migration', () => {
 		});
 	});
 
+	it('applies a global narrow layout without changing local boxes', async () => {
+		const store = await createStore();
+		const block = parseNote(blockSource()).blocks[0]!;
+
+		store.applyResponsiveAcrossNote('Note.md', 'scroll');
+		expect(store.resolve('Note.md', block).responsive).toBe('scroll');
+
+		store.unfollowGlobalState('Note.md', block);
+		expect(store.resolve('Note.md', block).responsive).toBe('responsive');
+		expect(store.getNote('Note.md')?.globalResponsive).toBe('scroll');
+	});
+
 	it('shows untouched blocks as following even before a global choice exists', async () => {
 		const store = await createStore();
 		const block = parseNote(blockSource()).blocks[0]!;
@@ -412,6 +426,54 @@ describe('state identity migration', () => {
 		for (const block of parsed.blocks) {
 			expect(store.resolve('Note.md', block).hiddenLabels.size).toBe(0);
 		}
+	});
+
+	it('never changes opted-out columns through note-wide visibility actions', async () => {
+		const store = await createStore();
+		const parsed = parseNote([blockSource(), blockSource()].join('\n\n'));
+		const [following, local] = parsed.blocks;
+		if (!following || !local) throw new Error('Missing fixture blocks');
+		store.unfollowGlobalState('Note.md', local);
+		store.setEditingVariant('Note.md', local, 'A');
+
+		expect(store.toggleColumnAcrossNote('Note.md', parsed, 'A')).toEqual({
+			visible: false,
+			applied: 1,
+			skipped: 1,
+		});
+		expect(store.resolve('Note.md', following).hiddenLabels.has('a')).toBe(true);
+		expect(store.resolve('Note.md', local).hiddenLabels.size).toBe(0);
+		expect(store.getEditingVariant('Note.md', local)).toBe('A');
+
+		store.toggleAllColumnsAcrossNote('Note.md', parsed);
+		expect(store.resolve('Note.md', local).hiddenLabels.size).toBe(0);
+		expect(store.getEditingVariant('Note.md', local)).toBe('A');
+	});
+
+	it('makes every note-wide action inert for blocks after the globe is off', async () => {
+		const store = await createStore();
+		const parsed = parseNote(blockSource());
+		const block = parsed.blocks[0]!;
+		store.setGlobalFollowingAcrossNote('Note.md', parsed, false);
+		const before = store.resolve('Note.md', block);
+
+		store.applyLabelAcrossNote('Note.md', parsed, 'B');
+		store.applyViewAcrossNote('Note.md', parsed, 'columns');
+		store.applyResponsiveAcrossNote('Note.md', 'scroll');
+		store.toggleColumnAcrossNote('Note.md', parsed, 'A');
+		store.toggleAllColumnsAcrossNote('Note.md', parsed);
+
+		expect(store.resolve('Note.md', block)).toMatchObject({
+			selectedLabel: before.selectedLabel,
+			view: before.view,
+			responsive: before.responsive,
+		});
+		expect(store.resolve('Note.md', block).hiddenLabels.size).toBe(0);
+		expect(store.getNote('Note.md')).toMatchObject({
+			globalLabel: 'B',
+			globalView: 'columns',
+			globalResponsive: 'scroll',
+		});
 	});
 
 	it('removes deleted-box state before rekeying an identical surviving box', async () => {

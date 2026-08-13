@@ -248,7 +248,7 @@ Selecting a label:
 - leaves unmatched blocks unchanged
 - reports the result, for example: `Applied to 8 blocks, skipped 2`
 
-The marker menu supports applying a view mode to all blocks and hiding the note control.
+The reveal controls support applying a view mode and narrow-screen layout to all blocks following global state. A dedicated layout button remains visible directly beside the globe in Toggle, Columns, and mixed-view states; its popup owns the narrow-screen choices. The layers marker menu contains only **Hide note control**. After hiding, a notice points to the dedicated **Show note control** command. View segments use mutually exclusive selected styling; a genuinely mixed note selects neither.
 
 When compatible blocks have different active selections, the marker uses a dashed outline and its tooltip reports `Mixed`.
 
@@ -275,6 +275,7 @@ Plugin data stores:
 - local overrides
 - explicitly saved hidden columns
 - sticky-control state
+- note-wide narrow-screen layout
 - per-dimension authored-following markers
 
 Clicking controls must not rewrite Markdown, except when the user has opted into automatic stable-ID creation for an ambiguous block.
@@ -284,7 +285,7 @@ Clicking controls must not rewrite Markdown, except when the user has opted into
 Current UI state resolves in this order:
 
 1. Session-only state
-2. Compatible note-wide state when global following is enabled
+2. Compatible note-wide label, view, and narrow-screen layout when global following is enabled
 3. Persisted block-specific label and view state
 4. Authored Markdown defaults
 5. Vault-wide plugin settings
@@ -292,7 +293,7 @@ Current UI state resolves in this order:
 
 Markdown attributes define authored defaults; they do not prevent temporary or persisted UI selections from overriding those defaults.
 
-Global state and block-specific state are persisted as separate layers. A local label or view choice opts that block out of global following and changes only the corresponding local dimension. Enabling **Follow global state** hides the local layer without deleting it; disabling following restores the exact saved local label and view. If a compatible global dimension is unavailable, the saved local dimension remains visible. **Reset to authored defaults** resets the local layer and opts the block out of global following. The note-wide force action enables following on every valid block without erasing any local layer.
+Global state and block-specific state are persisted as separate layers. A local label or view choice opts that block out of global following and changes only the corresponding local dimension. Enabling **Follow global state** hides the local layer without deleting it; disabling following restores the exact saved local label, view, and authored narrow-screen layout. If a compatible global dimension is unavailable, the saved local dimension remains visible. **Reset to authored defaults** resets the local layer and opts the block out of global following. The note-wide force action enables following on every valid block without erasing any local layer.
 
 Source mutations return old/new block identity mappings. Stable-ID creation and label rename atomically migrate persisted block state, session-hidden columns, editing state, selected labels, and affected note-wide labels before data is flushed. Label normalization is deterministic `trim().toLowerCase()`; schema migration attempts recovery of older locale-sensitive fingerprint keys when they can be reproduced.
 
@@ -315,6 +316,10 @@ When every valid block uses Columns, the sticky label buttons control note-wide 
 The same Columns state exposes one all-columns visibility toggle. With every column visible it hides all columns in all valid blocks; when any column is hidden it restores every column. The action is session state and does not rewrite authored visibility.
 
 The sticky global control also exposes a pressed-state globe toggle. Turning it on switches every valid block to its note-wide layer; turning it off restores every block’s separately saved local layer.
+
+The note-wide controller's persistent layers marker keeps an accent-colored border to distinguish global scope from individual controls; the globe uses the same neutral border as the other actions. The toolbar continues to display the saved global label, view, and narrow-layout selections while following is off; only the blocks resolve back to local state. This makes the state that will be reapplied by the globe visible before activation.
+
+All note-wide actions, including per-label and all-column visibility actions, operate only on boxes following global state. Displaying remembered global choices while following is off never authorizes mutation of opted-out boxes or their session-only column and editing state.
 
 The concise marker tooltip reports the useful state on one line, for example:
 

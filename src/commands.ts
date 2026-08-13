@@ -179,6 +179,23 @@ export function registerCommands(plugin: SectionVariantsPlugin): void {
 	});
 
 	plugin.addCommand({
+		id: 'show-sticky-note-control',
+		name: 'Show note control',
+		checkCallback: (checking) => {
+			const context = activeContext(plugin);
+			if (
+				!context ||
+				validBlocks(context.parsed).length < 2 ||
+				plugin.store.isStickyVisible(context.path)
+			) {
+				return false;
+			}
+			if (!checking) plugin.store.setStickyVisible(context.path, true);
+			return true;
+		},
+	});
+
+	plugin.addCommand({
 		id: 'export-variants-to-html',
 		name: 'Export variants to HTML',
 		checkCallback: (checking) => {

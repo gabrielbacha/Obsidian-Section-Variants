@@ -53,6 +53,7 @@
 .section-variants-add-variant,
 .section-variants-restore-columns,
 .section-variants-toggle-all-columns,
+.section-variants-narrow-layout-menu,
 .section-variants-global-follow-toggle {
 	flex: 0 0 auto;
 	width: 22px;
@@ -136,7 +137,7 @@ button.section-variants-global-follow-toggle:is(:hover, :focus-visible) {
 	display: none;
 }
 
-.section-variants-segment {
+button.section-variants-segment {
 	display: inline-flex;
 	flex: 0 0 auto;
 	align-items: center;
@@ -166,18 +167,18 @@ button.section-variants-global-follow-toggle:is(:hover, :focus-visible) {
 	height: var(--icon-s);
 }
 
-.section-variants-segment:hover {
+button.section-variants-segment:hover {
 	background: var(--background-modifier-hover);
 	color: var(--text-normal);
 }
 
-.section-variants-segment:focus-visible {
+button.section-variants-segment:focus-visible {
 	outline: 2px solid var(--interactive-accent);
 	outline-offset: -1px;
 }
 
 /* Quiet selection for variant labels. */
-.section-variants-segment.is-active {
+button.section-variants-segment.is-active {
 	background: var(--background-modifier-hover);
 	box-shadow: none;
 	color: var(--text-normal);
@@ -518,6 +519,15 @@ body.is-mobile .section-variants-context-menu-input {
 	background: transparent;
 }
 
+.section-variants-sticky-control > .section-variants-marker {
+	border-color: var(--interactive-accent);
+}
+
+.section-variants-sticky-control
+	> .section-variants-marker:is(:hover, :focus-visible) {
+	border-color: var(--interactive-accent-hover, var(--interactive-accent));
+}
+
 /* ----------------------------------------------------------------- modals */
 
 .section-variants-modal-error,
@@ -585,6 +595,7 @@ body.is-mobile .section-variants-marker,
 body.is-mobile .section-variants-add-variant,
 body.is-mobile .section-variants-restore-columns,
 body.is-mobile .section-variants-toggle-all-columns,
+body.is-mobile .section-variants-narrow-layout-menu,
 body.is-mobile .section-variants-global-follow-toggle {
 	min-height: 44px;
 }
@@ -601,6 +612,7 @@ body.is-mobile .section-variants-root {
 body.is-mobile .section-variants-add-variant,
 body.is-mobile .section-variants-restore-columns,
 body.is-mobile .section-variants-toggle-all-columns,
+body.is-mobile .section-variants-narrow-layout-menu,
 body.is-mobile .section-variants-global-follow-toggle {
 	min-width: 44px;
 }
@@ -616,6 +628,7 @@ body.is-mobile .section-variants-reveal-controls {
 	.section-variants-add-variant,
 	.section-variants-restore-columns,
 	.section-variants-toggle-all-columns,
+	.section-variants-narrow-layout-menu,
 	.section-variants-global-follow-toggle,
 	.section-variants-column-header button {
 		min-width: 44px;

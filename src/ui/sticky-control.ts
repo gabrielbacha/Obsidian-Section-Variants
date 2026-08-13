@@ -5,18 +5,21 @@ import {
 	setIcon,
 	setTooltip,
 } from 'obsidian';
-import { normalizeLabel, ViewMode } from '../core/types';
+import { normalizeLabel, ResponsiveMode, ViewMode } from '../core/types';
 import { unionLabels } from '../core/labels';
 import { SectionVariantsHost } from '../plugin-host';
 import { createSegmentedControl, VIEW_MODE_SEGMENTS } from './segmented-control';
 import { bottomObstruction } from './sticky-layout';
 import { createVariantMarker } from './variant-marker';
+import { NARROW_LAYOUT_OPTIONS } from './block-menu-actions';
 
 interface StickyControlResource {
 	control: HTMLElement;
 	observer: ResizeObserver;
 	statusBar?: HTMLElement;
 }
+
+const SHOW_NOTE_CONTROL_COMMAND = 'Show note control';
 
 export class StickyControlManager {
 	private readonly controls = new Map<MarkdownView, StickyControlResource>();
@@ -90,12 +93,25 @@ export class StickyControlManager {
 			currentLabels.size === 1
 				? labels.find((label) => currentLabels.has(normalizeLabel(label)))
 				: undefined;
+		const noteState = this.host.store.getNote(path);
+		const globalLabel =
+			labels.find(
+				(label) =>
+					normalizeLabel(label) === normalizeLabel(noteState?.globalLabel ?? ''),
+			) ?? activeLabel;
 		const views = new Set(
 			blocks.map((block) => states.get(block)?.view),
 		);
 		const activeView: ViewMode | undefined =
 			views.size === 1 ? [...views][0] : undefined;
-		const columnsMode = activeView === 'columns';
+		const globalView = noteState?.globalView ?? activeView;
+		const responsiveModes = new Set(
+			blocks.map((block) => states.get(block)?.responsive),
+		);
+		const activeResponsive: ResponsiveMode | undefined =
+			responsiveModes.size === 1 ? [...responsiveModes][0] : undefined;
+		const globalResponsive = noteState?.globalResponsive ?? activeResponsive;
+		const columnsMode = globalView === 'columns';
 		const visibleColumnLabels = columnsMode
 			? new Set(
 					labels.filter((label) => {
@@ -117,13 +133,16 @@ export class StickyControlManager {
 		const allFollowingGlobal = blocks.every((block) =>
 			this.host.store.isFollowingGlobalState(path, block),
 		);
+		const followingBlocks = blocks.filter((block) =>
+			this.host.store.isFollowingGlobalState(path, block),
+		);
 		const reveal = control.createDiv({ cls: 'section-variants-reveal-controls' });
 		createSegmentedControl(reveal, {
 			cls: 'section-variants-labels',
 			ariaLabel: columnsMode
 				? 'Toggle columns across note'
 				: 'Apply variant across note',
-			value: columnsMode ? undefined : activeLabel,
+			value: columnsMode ? undefined : globalLabel,
 			activeValues: visibleColumnLabels,
 			options: labels.map((label) => {
 				const action = visibleColumnLabels?.has(label) ? 'Hide' : 'Show';
@@ -156,7 +175,7 @@ export class StickyControlManager {
 			},
 		});
 		if (columnsMode) {
-			const hasHiddenColumn = blocks.some((block) =>
+			const hasHiddenColumn = followingBlocks.some((block) =>
 				block.variants.some((variant) =>
 					states.get(block)?.hiddenLabels.has(variant.normalizedLabel),
 				),
@@ -206,11 +225,27 @@ export class StickyControlManager {
 				`${result.applied} block${result.applied === 1 ? '' : 's'} now ${following ? 'follow global state' : 'use block-specific state'}.`,
 			);
 		});
+		const layoutLabel = narrowLayoutLabel(
+			globalResponsive ?? 'responsive',
+		);
+		const layoutMenu = reveal.createEl('button', {
+			type: 'button',
+			cls: 'clickable-icon section-variants-narrow-layout-menu',
+			attr: {
+				'aria-label': `Narrow-screen layout: ${layoutLabel}`,
+				'aria-haspopup': 'menu',
+			},
+		});
+		setIcon(layoutMenu, 'panel-top-dashed');
+		setTooltip(layoutMenu, `Narrow-screen layout: ${layoutLabel}`);
+		layoutMenu.addEventListener('click', (event) => {
+			this.openNarrowLayoutMenu(event, path, globalResponsive);
+		});
 		createControlDivider(reveal);
 		createSegmentedControl(reveal, {
 			cls: 'section-variants-view-modes',
 			ariaLabel: 'Apply view across note',
-			value: activeView,
+			value: globalView,
 			options: VIEW_MODE_SEGMENTS,
 			onSelect: (viewMode) => {
 				this.host.store.applyViewAcrossNote(path, parsed, viewMode);
@@ -218,10 +253,13 @@ export class StickyControlManager {
 		});
 		createVariantMarker(control, {
 			ariaLabel: 'Open note variants menu',
-			tooltip: `${activeLabel ?? 'Mixed'} · ${activeView ? titleCase(activeView) : 'Mixed'} · ${allFollowingGlobal ? 'all following global' : 'local block state present'}${differs ? ' · differs from defaults' : ''}`,
+			tooltip: `${activeLabel ?? 'Mixed'} · ${activeView ? titleCase(activeView) : 'Mixed'}${columnsMode ? ` · ${activeResponsive ? narrowLayoutLabel(activeResponsive) : 'Mixed layout'}` : ''} · ${allFollowingGlobal ? 'all following global' : 'local block state present'}${differs ? ' · differs from defaults' : ''}`,
 			followingGlobal: allFollowingGlobal,
-			mixed: currentLabels.size > 1 || views.size > 1,
-			onClick: (event) => this.openMenu(event, path, parsed, activeView),
+			mixed:
+				currentLabels.size > 1 ||
+				views.size > 1 ||
+				(columnsMode && responsiveModes.size > 1),
+			onClick: (event) => this.openMenu(event, path),
 		});
 	}
 
@@ -278,27 +316,35 @@ export class StickyControlManager {
 	private openMenu(
 		event: MouseEvent,
 		path: string,
-		parsed: ReturnType<SectionVariantsHost['parse']>,
-		activeView: ViewMode | undefined,
 	): void {
 		const menu = new Menu();
-		for (const view of VIEW_MODE_SEGMENTS) {
-			menu.addItem((item) =>
-				item
-					.setTitle(view.tooltip ?? view.label)
-					.setIcon(view.icon ?? 'circle')
-					.setChecked(activeView === view.value)
-					.onClick(() => {
-						this.host.store.applyViewAcrossNote(path, parsed, view.value);
-					}),
-			);
-		}
-		menu.addSeparator();
 		menu.addItem((item) =>
 			item.setTitle('Hide note control').setIcon('x').onClick(() => {
 				this.host.store.setStickyVisible(path, false);
+				new Notice(
+					`Note control hidden. Run “${SHOW_NOTE_CONTROL_COMMAND}” from the command palette to restore it.`,
+				);
 			}),
 		);
+		menu.showAtMouseEvent(event);
+	}
+
+	private openNarrowLayoutMenu(
+		event: MouseEvent,
+		path: string,
+		activeResponsive: ResponsiveMode | undefined,
+	): void {
+		const menu = new Menu();
+		for (const responsive of NARROW_LAYOUT_OPTIONS) {
+			menu.addItem((item) =>
+				item
+					.setTitle(responsive.label)
+					.setChecked(activeResponsive === responsive.value)
+					.onClick(() => {
+						this.host.store.applyResponsiveAcrossNote(path, responsive.value);
+					}),
+			);
+		}
 		menu.showAtMouseEvent(event);
 	}
 }
@@ -312,4 +358,8 @@ function createControlDivider(parent: HTMLElement): void {
 
 function titleCase(value: string): string {
 	return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function narrowLayoutLabel(value: ResponsiveMode): string {
+	return NARROW_LAYOUT_OPTIONS.find((option) => option.value === value)?.label ?? value;
 }

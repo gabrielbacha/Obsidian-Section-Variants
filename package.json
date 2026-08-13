@@ -1,6 +1,6 @@
 {
 	"name": "section-variants",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"description": "Switch, compare, and manage parallel versions of Markdown sections in Obsidian.",
 	"main": "main.js",
 	"type": "module",
@@ -14,6 +14,7 @@
 		"lint": "eslint ."
 	},
 	"keywords": [],
+	"author": "Gabriel Bacha",
 	"license": "0-BSD",
 	"devDependencies": {
 		"@codemirror/state": "^6.5.0",
