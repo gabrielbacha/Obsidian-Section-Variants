@@ -26,6 +26,10 @@ class FakeEditor {
 		return this.content;
 	}
 
+	setValue(content: string): void {
+		this.content = content;
+	}
+
 	offsetToPos(offset: number): { line: number; ch: number } {
 		const before = this.content.slice(0, offset);
 		const lines = before.split('\n');
@@ -276,6 +280,32 @@ describe('addVariant', () => {
 		expect(parse(editor.getValue()).blocks[0]?.variants).toHaveLength(3);
 		expect(result.source).toBe(editor.getValue());
 		expect(read()).toBe(TWO_VARIANTS);
+	});
+
+	it('re-resolves against an externally updated editor and preserves remote text', async () => {
+		const { app, path, read, firstBlock } = setup(TWO_VARIANTS);
+		const staleTarget = firstBlock();
+		const editor = new FakeEditor(read());
+		editor.setValue(`Remote introduction.\n\n${TWO_VARIANTS.replace('Alpha.', 'Alpha changed remotely.')}`);
+
+		await addVariant(app, path, staleTarget, 'C', parse, editor as never);
+
+		expect(editor.getValue()).toContain('Remote introduction.');
+		expect(editor.getValue()).toContain('Alpha changed remotely.');
+		expect(parse(editor.getValue()).blocks[0]?.variants).toHaveLength(3);
+	});
+
+	it('aborts without writing when an external update removed the target block', async () => {
+		const { app, path, read, firstBlock } = setup(TWO_VARIANTS);
+		const staleTarget = firstBlock();
+		const editor = new FakeEditor(read());
+		editor.setValue('The remote copy replaced this section.\n');
+
+		await expect(
+			addVariant(app, path, staleTarget, 'C', parse, editor as never),
+		).rejects.toThrow(/changed/iu);
+		expect(editor.transactionCount).toBe(0);
+		expect(editor.getValue()).toBe('The remote copy replaced this section.\n');
 	});
 
 	it('preserves CRLF while updating an open editor', async () => {

@@ -52,9 +52,10 @@ Verify on desktop and mobile:
 - Every valid block has a subtle theme-aware border. Only the layers marker remains at rest; hover or focus reveals the quiet label selector, while view modes and advanced actions remain in the marker menu.
 - The top-right sticky control follows the same marker/reveal pattern, reports mixed and default-difference state through its marker and tooltip, and synchronizes multiple panes of the same note.
 - Live Preview hides inactive content; Toggle and visible Columns panels remain directly editable with native formatting, and `Escape` returns focus to the owning editor.
-- At the first content position, repeated Backspace never removes a newline or fence. At the final content position, Delete never removes the closing fence, while Enter and typing remain inside the variant before that fence.
+- At the first and final positions inside an inline variant editor, ordinary typing remains inside that variant and preserves its closing fence.
 - Repeat fence hiding and boundary edits in an LF note and a CRLF note. Insert text above a block and confirm **Edit** still selects the current variant offset.
-- Selections, paste, cut, drop, undo/redo, and multi-cursor edits cannot cross a valid block's hidden fences or a nested block boundary.
+- Live Preview retains native outer-editor behavior: whole-note and cross-block selections can delete, cut, paste over, or replace complete variants blocks, and undo/redo restores those edits.
+- Remote, programmatic, and externally reconciled Markdown updates remain allowed, including changes to variant structure.
 - Source mode exposes every fence and variant without decorations.
 - Commands, `/variants`, `::: variants`, and label autocomplete work without assigned default hotkeys.
 - Rename, authored configuration, reset, stable-ID creation, and the unambiguous missing-closer fix change only the intended source ranges.

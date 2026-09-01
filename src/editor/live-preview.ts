@@ -5,7 +5,6 @@ import {
 	Range,
 	StateEffect,
 	StateField,
-	Transaction,
 } from '@codemirror/state';
 import {
 	Decoration,
@@ -32,14 +31,7 @@ import {
 	createVariantHeader,
 	VariantHeaderHandle,
 } from '../ui/variant-header';
-import {
-	changesAreWithinEditableSpans,
-	DocumentChange,
-	EditableSpan,
-	editableSpansForVariant,
-} from './edit-boundaries';
 import { blockSpan } from './ranges';
-import { isStructuralTransaction } from '../core/structural-transaction';
 import { isNoteWideSelection } from './interactions';
 import { InlineColumnEditor } from './inline-column-editor';
 import { liveEditableVariants } from './live-variants';
@@ -118,34 +110,6 @@ export function createLivePreviewExtension(
 
 	return [
 		refreshField,
-		EditorState.changeFilter.of((transaction) => {
-			if (!transaction.docChanged) return true;
-			if (isStructuralTransaction()) return true;
-			// Vault/process updates and plugin mutations are unannotated and may
-			// intentionally change structure. Guard only editor-originated input,
-			// deletion, history, completion, paste, cut, and drop transactions.
-			if (transaction.annotation(Transaction.userEvent) === undefined) {
-				return true;
-			}
-			if (!transaction.startState.field(editorLivePreviewField, false)) {
-				return true;
-			}
-			const info = transaction.startState.field(editorInfoField, false);
-			const path = info?.file?.path;
-			if (!path) return true;
-			const parsed = host.parse(transaction.startState.doc.toString());
-			const spans = collectEditableSpans(
-				host,
-				path,
-				parsed.source,
-				parsed.roots,
-			);
-			const changes: DocumentChange[] = [];
-			transaction.changes.iterChanges((from, to, _fromNew, _toNew, inserted) => {
-				changes.push({ from, to, inserted: inserted.toString() });
-			});
-			return changesAreWithinEditableSpans(parsed, spans, changes);
-		}),
 		decorationsField,
 		ViewPlugin.fromClass(SectionVariantsViewPlugin),
 		Prec.high(keymap.of([
@@ -167,39 +131,6 @@ export function createLivePreviewExtension(
 			},
 		])),
 	];
-}
-
-function collectEditableSpans(
-	host: SectionVariantsHost,
-	path: string,
-	source: string,
-	blocks: readonly VariantBlock[],
-): EditableSpan[] {
-	const spans: EditableSpan[] = [];
-	for (const block of blocks) {
-		if (!block.valid || !block.closing) continue;
-		const state = host.store.resolve(path, block);
-		const mode = state.view;
-		const editable = liveEditableVariants(
-			block,
-			mode,
-			state.selectedLabel,
-			state.hiddenLabels,
-		);
-		for (const variant of editable) {
-			if (!variant.closing) continue;
-			spans.push(...editableSpansForVariant(variant, source));
-			spans.push(
-				...collectEditableSpans(
-					host,
-					path,
-					source,
-					variant.children,
-				),
-			);
-		}
-	}
-	return spans;
 }
 
 function buildDecorations(

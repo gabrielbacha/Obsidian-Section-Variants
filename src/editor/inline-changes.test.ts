@@ -30,6 +30,23 @@ describe('inline column change mapping', () => {
 		).toEqual([{ from: 12, to: 12, inserted: 'First line\n' }]);
 	});
 
+	it('preserves CRLF and does not duplicate a pasted trailing line break', () => {
+		expect(
+			mapInlineChanges(
+				{ from: 12, to: 12, requiresTrailingLineBreak: true },
+				[{ from: 0, to: 0, inserted: 'First line' }],
+				'\r\n',
+			),
+		).toEqual([{ from: 12, to: 12, inserted: 'First line\r\n' }]);
+		expect(
+			mapInlineChanges(
+				{ from: 12, to: 12, requiresTrailingLineBreak: true },
+				[{ from: 0, to: 0, inserted: 'Pasted line\n' }],
+				'\r\n',
+			),
+		).toEqual([{ from: 12, to: 12, inserted: 'Pasted line\n' }]);
+	});
+
 	it('rejects a non-insertion against a truly empty island', () => {
 		expect(
 			mapInlineChanges(

@@ -162,15 +162,32 @@ export class InlineColumnEditor {
 			parent,
 			state: this.createLivePreviewState(markdown),
 			dispatchTransactions: (transactions, view) => {
-				view.update(transactions);
-				if (this.destroyed || this.rebinding) return;
+				if (this.destroyed || this.rebinding) {
+					view.update(transactions);
+					return;
+				}
 				const island = getIsland();
+				let acceptedCount = 0;
 				this.forwarding = true;
 				try {
 					for (const transaction of transactions) {
 						if (transaction.docChanged) {
-							this.forwardChanges(island, transaction);
-						} else if (transaction.selection) {
+							if (!this.forwardChanges(island, transaction)) {
+								if (acceptedCount > 0) {
+									view.update(transactions.slice(0, acceptedCount));
+								}
+								this.restoreFromOuter(island);
+								return;
+							}
+						}
+						acceptedCount += 1;
+					}
+					// The owning note accepted every document change, so the fragment may
+					// now advance to the same state. This prevents rejected changes from
+					// ever becoming visible as unsaved child-editor text.
+					view.update(transactions);
+					for (const transaction of transactions) {
+						if (!transaction.docChanged && transaction.selection) {
 							this.mirrorSelection(island, transaction.state.selection);
 						}
 					}
@@ -225,7 +242,7 @@ export class InlineColumnEditor {
 		]);
 	}
 
-	private forwardChanges(island: Island, transaction: Transaction): void {
+	private forwardChanges(island: Island, transaction: Transaction): boolean {
 		const relative: RelativeChange[] = [];
 		transaction.changes.iterChanges((from, to, _fromNew, _toNew, inserted) => {
 			relative.push({
@@ -234,8 +251,11 @@ export class InlineColumnEditor {
 				inserted: inserted.toString(),
 			});
 		});
-		const mapped = mapInlineChanges(island.span, relative);
-		if (!mapped) return;
+		const before = this.outerView.state.doc.toString();
+		const lineBreak = before.includes('\r\n') ? '\r\n' : '\n';
+		const mapped = mapInlineChanges(island.span, relative, lineBreak);
+		if (!mapped) return false;
+		const expected = applyDocumentChanges(before, mapped);
 		const userEvent = transaction.annotation(Transaction.userEvent) ?? 'input';
 		const selection = this.mapSelection(island, transaction.state.selection);
 		this.outerView.dispatch({
@@ -247,6 +267,32 @@ export class InlineColumnEditor {
 			selection,
 			annotations: Transaction.userEvent.of(userEvent),
 		});
+		return this.outerView.state.doc.toString() === expected;
+	}
+
+	private restoreFromOuter(island: Island): void {
+		const next = this.outerView.state.doc.sliceString(island.span.from, island.span.to);
+		const previous = island.view.state.doc.toString();
+		if (next === previous) return;
+		const selection = island.view.state.selection;
+		const mappedSelection = EditorSelection.create(
+			selection.ranges.map((range) =>
+				EditorSelection.range(
+					mapOffsetThroughReplacement(previous, next, range.anchor),
+					mapOffsetThroughReplacement(previous, next, range.head),
+				),
+			),
+			selection.mainIndex,
+		);
+		this.rebinding = true;
+		try {
+			island.view.dispatch({
+				changes: { from: 0, to: island.view.state.doc.length, insert: next },
+				selection: mappedSelection,
+			});
+		} finally {
+			this.rebinding = false;
+		}
 	}
 
 	private mirrorSelection(island: Island, selection: EditorSelection): void {
@@ -272,6 +318,19 @@ export class InlineColumnEditor {
 		editor[action]();
 		return true;
 	}
+}
+
+function applyDocumentChanges(
+	source: string,
+	changes: readonly { from: number; to: number; inserted?: string }[],
+): string {
+	return [...changes]
+		.sort((left, right) => right.from - left.from)
+		.reduce(
+			(result, change) =>
+				`${result.slice(0, change.from)}${change.inserted ?? ''}${result.slice(change.to)}`,
+			source,
+		);
 }
 
 function structureSignature(variant: VariantSection): string {

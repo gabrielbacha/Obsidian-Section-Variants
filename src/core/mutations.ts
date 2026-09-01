@@ -4,7 +4,7 @@ import { resolveCurrentBlock } from './block-resolution';
 import { parseColumnRatios, serializeColumnRatios } from './column-ratios';
 import { randomBytes } from './random';
 import { escapeAttribute, serializeContainerOpening } from './serializer';
-import { runStructuralTransaction } from './structural-transaction';
+import { STRUCTURAL_TRANSACTION_ORIGIN } from './structural-transaction';
 import {
 	ContainerAttributes,
 	normalizeLabel,
@@ -438,17 +438,15 @@ function applyEditorChange(editor: Editor, before: string, after: string): void 
 	) {
 		suffix += 1;
 	}
-	runStructuralTransaction(() => {
-		editor.transaction({
-			changes: [
-				{
-					from: editor.offsetToPos(prefix),
-					to: editor.offsetToPos(before.length - suffix),
-					text: after.slice(prefix, after.length - suffix),
-				},
-			],
-		});
-	});
+	editor.transaction({
+		changes: [
+			{
+				from: editor.offsetToPos(prefix),
+				to: editor.offsetToPos(before.length - suffix),
+				text: after.slice(prefix, after.length - suffix),
+			},
+		],
+	}, STRUCTURAL_TRANSACTION_ORIGIN);
 }
 
 function resolveFile(app: App, path: string): TFile {

@@ -19,6 +19,7 @@ import {
 	updateBlockAttributesPatch,
 } from './core/mutations';
 import { collectLabelCatalog } from './core/labels';
+import { LatestPathGeneration } from './core/latest-path-generation';
 import { resolveCurrentBlock } from './core/block-resolution';
 import { parseNote } from './core/parser';
 import { serializeVariantsBlock } from './core/serializer';
@@ -72,6 +73,8 @@ export default class SectionVariantsPlugin
 	private stickyRefreshTimer?: number;
 	private stickyRefreshPath?: string;
 	private stickyRefreshAll = false;
+	private readonly vaultRefreshGenerations = new LatestPathGeneration();
+	private readonly vaultRefreshTimers = new Map<string, number>();
 
 	async onload(): Promise<void> {
 		this.store = new StateStore(this);
@@ -110,6 +113,13 @@ export default class SectionVariantsPlugin
 			}),
 		);
 		this.registerEvent(
+			this.app.vault.on('modify', (file) => {
+				if (file instanceof TFile && file.extension === 'md') {
+					this.scheduleVaultRefresh(file.path);
+				}
+			}),
+		);
+		this.registerEvent(
 			this.app.vault.on('rename', (file, oldPath) => {
 				this.handleRename(file, oldPath);
 			}),
@@ -131,6 +141,11 @@ export default class SectionVariantsPlugin
 			window.clearTimeout(this.stickyRefreshTimer);
 			this.stickyRefreshTimer = undefined;
 		}
+		for (const timer of this.vaultRefreshTimers.values()) {
+			window.clearTimeout(timer);
+		}
+		this.vaultRefreshTimers.clear();
+		this.vaultRefreshGenerations.clear();
 		this.stickyControls?.destroy();
 		void this.store?.flush();
 	}
@@ -521,19 +536,57 @@ export default class SectionVariantsPlugin
 		}, 50);
 	}
 
+	private scheduleVaultRefresh(path: string): void {
+		const generation = this.vaultRefreshGenerations.next(path);
+		const existing = this.vaultRefreshTimers.get(path);
+		if (existing !== undefined) window.clearTimeout(existing);
+		this.vaultRefreshTimers.set(
+			path,
+			window.setTimeout(() => {
+				this.vaultRefreshTimers.delete(path);
+				void this.refreshFromVault(path, generation);
+			}, 50),
+		);
+	}
+
+	private async refreshFromVault(path: string, generation: number): Promise<void> {
+		try {
+			const file = this.app.vault.getAbstractFileByPath(path);
+			if (!(file instanceof TFile)) return;
+			const source = await this.app.vault.cachedRead(file);
+			if (!this.vaultRefreshGenerations.isCurrent(path, generation)) return;
+			this.readingCoordinator.rebind(path, source);
+			this.refreshAllViews(path);
+		} catch {
+			// A concurrent rename or deletion invalidates this refresh naturally.
+		}
+	}
+
+	private invalidateVaultRefresh(path: string): void {
+		const timer = this.vaultRefreshTimers.get(path);
+		if (timer !== undefined) window.clearTimeout(timer);
+		this.vaultRefreshTimers.delete(path);
+		this.vaultRefreshGenerations.invalidate(path);
+	}
+
 	private handleStoreChange(change: StoreChange): void {
 		refreshLivePreviewEditors(change.path);
 		this.stickyControls?.refresh(change.path);
 	}
 
 	private handleDelete(file: TAbstractFile): void {
-		if (file instanceof TFile) this.store.deleteNote(file.path);
-		else if (file instanceof TFolder) this.store.deleteFolder(file.path);
+		if (file instanceof TFile) {
+			this.invalidateVaultRefresh(file.path);
+			this.store.deleteNote(file.path);
+		} else if (file instanceof TFolder) this.store.deleteFolder(file.path);
 	}
 
 	private handleRename(file: TAbstractFile, oldPath: string): void {
-		if (file instanceof TFile) this.store.renameNote(oldPath, file.path);
-		else if (file instanceof TFolder) this.store.renameFolder(oldPath, file.path);
+		if (file instanceof TFile) {
+			this.invalidateVaultRefresh(oldPath);
+			this.invalidateVaultRefresh(file.path);
+			this.store.renameNote(oldPath, file.path);
+		} else if (file instanceof TFolder) this.store.renameFolder(oldPath, file.path);
 	}
 
 	/**

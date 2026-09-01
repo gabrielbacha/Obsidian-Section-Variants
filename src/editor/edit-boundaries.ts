@@ -1,16 +1,10 @@
-import { ParsedNote, VariantSection } from '../core/types';
+import { VariantSection } from '../core/types';
 
 export interface EditableSpan {
 	from: number;
 	to: number;
 	/** A truly empty variant needs a newline before ordinary text is safe. */
 	requiresTrailingLineBreak?: boolean;
-}
-
-export interface DocumentChange {
-	from: number;
-	to: number;
-	inserted?: string;
 }
 
 /**
@@ -73,42 +67,4 @@ export function editableSpansForVariant(
 		spans.push({ from: cursor, to: contentEnd });
 	}
 	return spans;
-}
-
-/**
- * Text outside valid blocks remains free-form. A change touching a valid block
- * must fit wholly inside one currently editable prose island.
- */
-export function changesAreWithinEditableSpans(
-	parsed: ParsedNote,
-	spans: readonly EditableSpan[],
-	changes: readonly DocumentChange[],
-): boolean {
-	return changes.every((change) => {
-		const touchesGuardedBlock = parsed.blocks.some(
-			(block) =>
-				block.valid &&
-				block.closing !== undefined &&
-				changeTouchesRange(change, block.range.from, block.range.to),
-		);
-		if (!touchesGuardedBlock) return true;
-		return spans.some((span) => {
-			if (change.from < span.from || change.to > span.to) return false;
-			if (!span.requiresTrailingLineBreak) return true;
-			return (
-				change.from === change.to && (change.inserted ?? '').endsWith('\n')
-			);
-		});
-	});
-}
-
-function changeTouchesRange(
-	change: DocumentChange,
-	from: number,
-	to: number,
-): boolean {
-	if (change.from === change.to) {
-		return change.from > from && change.from < to;
-	}
-	return change.from < to && change.to > from;
 }

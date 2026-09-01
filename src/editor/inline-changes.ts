@@ -1,9 +1,15 @@
-import { DocumentChange, EditableSpan } from './edit-boundaries';
+import { EditableSpan } from './edit-boundaries';
 
 export interface RelativeChange {
 	from: number;
 	to: number;
 	inserted: string;
+}
+
+export interface MappedInlineChange {
+	from: number;
+	to: number;
+	inserted?: string;
 }
 
 export interface SelectionRange {
@@ -15,7 +21,8 @@ export interface SelectionRange {
 export function mapInlineChanges(
 	span: EditableSpan,
 	changes: readonly RelativeChange[],
-): DocumentChange[] | undefined {
+	lineBreak = '\n',
+): MappedInlineChange[] | undefined {
 	const mapped = changes.map((change) => ({
 		from: span.from + change.from,
 		to: span.from + change.to,
@@ -24,7 +31,9 @@ export function mapInlineChanges(
 	if (!span.requiresTrailingLineBreak) return mapped;
 	const only = mapped[0];
 	if (mapped.length !== 1 || !only || only.from !== only.to) return undefined;
-	only.inserted = `${only.inserted ?? ''}\n`;
+	if (!(only.inserted ?? '').endsWith('\n')) {
+		only.inserted = `${only.inserted ?? ''}${lineBreak}`;
+	}
 	return mapped;
 }
 
