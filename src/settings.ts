@@ -6,7 +6,7 @@ import {
 } from 'obsidian';
 import { SectionVariantsSettings } from './core/state-model';
 import type SectionVariantsPlugin from './main';
-import { ABOUT_AND_FEEDBACK, BUG_REPORT_URL, FEATURE_REQUEST_URL, WEBSITE_URL } from './external-links';
+import { ABOUT_AND_FEEDBACK, BUG_REPORT_URL, FEATURE_REQUEST_URL, MORE_PLUGINS_URL, WEBSITE_URL } from './external-links';
 
 export class SectionVariantsSettingTab extends PluginSettingTab {
 	constructor(
@@ -198,6 +198,7 @@ function renderAboutAndFeedback(setting: Setting): void {
 		.setName(ABOUT_AND_FEEDBACK.name)
 		.setDesc(ABOUT_AND_FEEDBACK.description)
 		.addButton((button) => button.setButtonText(ABOUT_AND_FEEDBACK.websiteLabel).setCta().onClick(() => openExternalLink(WEBSITE_URL)))
+		.addButton((button) => button.setButtonText(ABOUT_AND_FEEDBACK.morePluginsLabel).onClick(() => openExternalLink(MORE_PLUGINS_URL)))
 		.addButton((button) => button.setButtonText(ABOUT_AND_FEEDBACK.featureRequestLabel).onClick(() => openExternalLink(FEATURE_REQUEST_URL)))
 		.addButton((button) => button.setButtonText(ABOUT_AND_FEEDBACK.bugReportLabel).onClick(() => openExternalLink(BUG_REPORT_URL)));
 }
