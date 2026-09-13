@@ -2,6 +2,8 @@
 
 Section Variants lets you switch, compare, and manage parallel versions of a Markdown section without splitting them across notes.
 
+> Created by [Gabriel Bacha](https://www.gabrielbacha.com/?utm_source=obsidian_community&utm_medium=referral&utm_campaign=obsidian_assets&utm_content=section_variants_readme_header) · [Visit gabrielbacha.com](https://www.gabrielbacha.com/?utm_source=obsidian_community&utm_medium=referral&utm_campaign=obsidian_assets&utm_content=section_variants_readme_header) · [Request a feature](https://github.com/gabrielbacha/Obsidian-Section-Variants/issues/new?template=feature_request.yml)
+
 ## Screenshots
 
 ### Compare variants side by side

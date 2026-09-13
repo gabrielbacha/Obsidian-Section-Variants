@@ -49,5 +49,6 @@ jobs:
 
                   gh release create "$tag" \
                     --title="$tag" \
+                    --notes "More software, tools, and ideas: [gabrielbacha.com](https://www.gabrielbacha.com/?utm_source=github&utm_medium=referral&utm_campaign=obsidian_assets&utm_content=section_variants_release)" \
                     --draft \
                     main.js manifest.json ${{ steps.styles.outputs.exists == 'true' && 'styles.css' || '' }}

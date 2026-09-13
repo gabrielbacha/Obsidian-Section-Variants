@@ -5,5 +5,6 @@
 	"minAppVersion": "1.12.0",
 	"description": "Switch, compare, and manage parallel versions of Markdown sections within one note.",
 	"author": "Gabriel Bacha",
-	"isDesktopOnly": false
+	"isDesktopOnly": false,
+	"authorUrl": "https://www.gabrielbacha.com/?utm_source=obsidian_community&utm_medium=referral&utm_campaign=obsidian_assets&utm_content=section_variants_manifest"
 }

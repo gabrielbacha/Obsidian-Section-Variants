@@ -6,6 +6,7 @@ import {
 } from 'obsidian';
 import { SectionVariantsSettings } from './core/state-model';
 import type SectionVariantsPlugin from './main';
+import { ABOUT_AND_FEEDBACK, BUG_REPORT_URL, FEATURE_REQUEST_URL, WEBSITE_URL } from './external-links';
 
 export class SectionVariantsSettingTab extends PluginSettingTab {
 	constructor(
@@ -17,6 +18,15 @@ export class SectionVariantsSettingTab extends PluginSettingTab {
 
 	getSettingDefinitions(): SettingDefinitionItem<SettingKey>[] {
 		return [
+			{
+				name: ABOUT_AND_FEEDBACK.heading,
+				render: (setting) => { setting.setName(ABOUT_AND_FEEDBACK.heading).setHeading(); },
+			},
+			{
+				name: ABOUT_AND_FEEDBACK.name,
+				desc: ABOUT_AND_FEEDBACK.description,
+				render: (setting) => renderAboutAndFeedback(setting),
+			},
 			{
 				name: 'Default view',
 				desc: 'Used when a block does not declare a view.',
@@ -107,6 +117,10 @@ export class SectionVariantsSettingTab extends PluginSettingTab {
 	private renderDefinition(
 		definition: SettingDefinitionItem<SettingKey>,
 	): void {
+		if ('render' in definition && definition.render) {
+			definition.render(new Setting(this.containerEl), undefined as never);
+			return;
+		}
 		// Groups carry a heading rather than a control; this tab defines none,
 		// but the type permits them.
 		if (!('control' in definition)) return;
@@ -177,4 +191,17 @@ function definitionToggle(
 	key: 'stickyControlEnabled' | 'automaticBlockIds' | 'showIndicators',
 ): SettingDefinitionItem<SettingKey> {
 	return { name, desc, control: { type: 'toggle', key } };
+}
+
+function renderAboutAndFeedback(setting: Setting): void {
+	setting
+		.setName(ABOUT_AND_FEEDBACK.name)
+		.setDesc(ABOUT_AND_FEEDBACK.description)
+		.addButton((button) => button.setButtonText(ABOUT_AND_FEEDBACK.websiteLabel).setCta().onClick(() => openExternalLink(WEBSITE_URL)))
+		.addButton((button) => button.setButtonText(ABOUT_AND_FEEDBACK.featureRequestLabel).onClick(() => openExternalLink(FEATURE_REQUEST_URL)))
+		.addButton((button) => button.setButtonText(ABOUT_AND_FEEDBACK.bugReportLabel).onClick(() => openExternalLink(BUG_REPORT_URL)));
+}
+
+function openExternalLink(url: string): void {
+	window.open(url, '_blank', 'noopener,noreferrer');
 }
