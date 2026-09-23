@@ -312,7 +312,7 @@ test('native multiline paste and keyboard undo/redo share the original note hist
   expect((await snapshot(page)).source).toBe(SOURCE.replace('Alpha', 'One\nTwo\nThree'));
   await page.keyboard.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z');
   expect((await snapshot(page)).source).toBe(SOURCE);
-  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Shift+z' : 'Control+Shift+z');
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Shift+z' : 'Control+y');
   expect((await snapshot(page)).source).toContain('One\nTwo\nThree');
   await expect(panel(page, 'B').locator('p')).toBeVisible();
 });
