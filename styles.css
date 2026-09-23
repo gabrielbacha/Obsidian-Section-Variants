@@ -446,18 +446,23 @@ body.is-mobile .section-variants-context-menu-input {
 	padding: 3px;
 }
 
-/* A leading heading starts at the variant's content edge. Later headings keep
- * Obsidian's normal prose rhythm. */
-.section-variants-panel
-	> .section-variants-column-header
-	+ :is(h1, h2, h3, h4, h5, h6),
-.section-variants-panel
-	> .section-variants-column-header
-	+ .section-variants-inline-editor
-	.cm-content
-	> .HyperMD-header:first-child {
-	margin-block-start: 0 !important;
-	padding-block-start: 0 !important;
+/* Prose is styled by Obsidian and the active theme, including first headings. */
+.section-variants-prose {
+	min-width: 0;
+}
+
+/* Native Reading View owns prose styling. Only remove pane-sized layout. */
+.section-variants-preview > .markdown-preview-view {
+	height: auto;
+	min-height: 0;
+	padding: 0;
+	overflow: visible;
+}
+
+.section-variants-preview > .markdown-preview-view > .markdown-preview-sizer {
+	min-width: 0;
+	max-width: none;
+	margin: 0;
 }
 
 .section-variants-nested {
@@ -499,6 +504,78 @@ body.is-mobile .section-variants-context-menu-input {
 	box-sizing: border-box;
 	width: 100%;
 	margin-block: var(--size-2-2);
+}
+
+.section-variants-native-header {
+	margin-block: 0;
+	padding-block: var(--size-4-3);
+}
+
+.section-variants-native-block-name {
+	min-height: var(--section-variants-control-size);
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-semibold);
+}
+
+/* Only the active panel's body changes; its grid cell and header stay mounted. */
+.section-variants-panel.is-editing > .section-variants-prose {
+	display: none;
+}
+
+.section-variants-column-editor {
+	min-width: 0;
+}
+
+/* Remove pane-sized scrolling/padding, not Markdown typography. */
+.section-variants-column-editor > .markdown-source-view,
+.section-variants-column-editor > .markdown-source-view > .cm-editor {
+	height: auto;
+	min-height: 0;
+}
+
+.section-variants-column-editor > .markdown-source-view > .cm-editor > .cm-scroller {
+	overflow: visible;
+}
+
+/* Line-number and fold gutters belong to the main note, not its column editor. */
+.section-variants-column-editor .cm-gutters {
+	display: none !important;
+}
+
+.section-variants-column-editor > .markdown-source-view > .cm-editor > .cm-scroller > .cm-sizer {
+	min-height: 0 !important;
+	padding-bottom: 0 !important;
+}
+
+.section-variants-native-frames {
+	position: absolute;
+	inset: 0;
+	overflow: hidden;
+	pointer-events: none;
+	z-index: 1;
+}
+
+.section-variants-native-frame {
+	position: absolute;
+	box-sizing: border-box;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	pointer-events: none;
+}
+
+.section-variants-native-end {
+	display: inline-block;
+	width: 0;
+	height: var(--size-4-3, 12px);
+}
+
+/* This line contains only hidden suffix fences, never authored prose. */
+.markdown-source-view.mod-cm6 .cm-line.section-variants-native-boundary-line,
+.cm-line.section-variants-native-boundary-line {
+	padding-block: 0;
+	line-height: 0;
+	font-size: 0;
 }
 
 /* ---------------------------------------------------------- sticky control */
@@ -644,35 +721,6 @@ body.is-mobile .section-variants-reveal-controls {
 body.is-mobile .section-variants-column-header button {
 	min-width: 44px;
 	min-height: 44px;
-}
-
-/* The nested source editor inherits the note typography and owns no chrome. */
-.section-variants-inline-editor .cm-editor,
-.section-variants-inline-editor .cm-scroller {
-	min-height: 1.5em;
-	background: transparent;
-	font-family: var(--font-text);
-}
-
-.section-variants-inline-editor .cm-scroller {
-	overflow: hidden;
-}
-
-.section-variants-inline-editor .cm-content {
-	padding: 0;
-	caret-color: var(--text-normal);
-}
-
-.section-variants-inline-editor .cm-line {
-	padding: 0;
-}
-
-.section-variants-inline-editor .cm-gutters {
-	display: none;
-}
-
-.section-variants-inline-editor .cm-editor.cm-focused {
-	outline: none;
 }
 
 body.is-mobile

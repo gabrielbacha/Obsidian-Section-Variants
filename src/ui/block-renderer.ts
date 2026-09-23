@@ -1,7 +1,6 @@
 import {
 	Component,
 	MarkdownRenderChild,
-	MarkdownRenderer,
 	Notice,
 	setIcon,
 } from 'obsidian';
@@ -17,7 +16,9 @@ import { findReboundBlock } from '../reading/rebind';
 import { createBlockControls } from './block-controls';
 import { visibleColumnWidths } from '../core/column-ratios';
 import { syncColumnGrid, syncColumnSeparators } from './column-layout';
-import { createVariantHeader } from './variant-header';
+import { createVariantHeader, VariantHeaderHandle } from './variant-header';
+import { renderNativePreview } from './native-preview';
+import { applyPreviewEdit } from './preview-edit';
 
 export class VariantBlockRenderer extends MarkdownRenderChild {
 	private renderComponent?: Component;
@@ -28,6 +29,10 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 	private columnWidths?: string;
 	private columnResponsive = 'responsive';
 	private visibleColumnCount = 0;
+	private readonly headers = new Map<string, VariantHeaderHandle>();
+	private readonly nestedRenderers: VariantBlockRenderer[] = [];
+	private controls?: { rebind(block: VariantBlock): void };
+	private deferredRender = false;
 
 	constructor(
 		private readonly host: SectionVariantsHost,
@@ -72,13 +77,28 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 		this.onDispose?.();
 	}
 
-	rebind(source: string, blocks: readonly VariantBlock[]): void {
+	rebind(source: string, blocks: readonly VariantBlock[], preserveEditor = false): void {
 		const previousBlocks = this.host.parse(this.source).blocks;
 		const next = findReboundBlock(previousBlocks, this.block, blocks);
 		if (!next?.valid) return;
+		const unchanged = this.source.slice(this.block.range.from, this.block.range.to) === source.slice(next.range.from, next.range.to);
 		this.source = source;
 		this.block = next;
-		void this.render();
+		const editing = preserveEditor && Boolean(this.containerEl.querySelector('.section-variants-column-editor'));
+		if ((!unchanged || this.deferredRender) && !editing) {
+			this.deferredRender = false;
+			void this.render();
+			return;
+		}
+		if (!unchanged) this.deferredRender = true;
+		this.containerEl.dataset.blockKey = next.identityKey;
+		this.controls?.rebind(next);
+		for (const variant of next.variants) {
+			const header = this.headers.get(variant.normalizedLabel);
+			header?.rebind(source, variant);
+			if (header?.element.parentElement) header.element.parentElement.dataset.blockFrom = String(next.opening.from);
+		}
+		for (const renderer of this.nestedRenderers) renderer.rebind(source, blocks, preserveEditor);
 	}
 
 	private async render(): Promise<void> {
@@ -132,6 +152,7 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 			if (version !== this.renderVersion) return;
 			const panel = content.createDiv({ cls: 'section-variants-panel' });
 			panel.dataset.label = variant.label;
+			panel.dataset.blockFrom = String(this.block.opening.from);
 			const selected =
 				variant.normalizedLabel === normalizeLabel(state.selectedLabel);
 			const hiddenColumn = state.hiddenLabels.has(variant.normalizedLabel);
@@ -146,7 +167,7 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 			panel.dataset.authoredDefault = String(
 				variant.normalizedLabel === normalizeLabel(effectiveAuthoredLabel(this.block)),
 			);
-			createVariantHeader({
+			this.headers.set(variant.normalizedLabel, createVariantHeader({
 				parent: panel,
 				source: this.source,
 				variant,
@@ -160,8 +181,9 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 								);
 							}
 						: undefined,
-			});
-			await this.renderVariantContent(variant, panel, component);
+			}));
+			const body = panel.createDiv({ cls: 'section-variants-prose' });
+			await this.renderVariantContent(variant, body, component);
 		}
 
 		if (visibleCount === 0) {
@@ -187,7 +209,7 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 		const toolbar = this.containerEl.createDiv({ cls: 'section-variants-toolbar' });
 		toolbar.setAttribute('role', 'toolbar');
 		toolbar.setAttribute('aria-label', 'Section variants');
-		createBlockControls({
+		this.controls = createBlockControls({
 			host: this.host,
 			path: this.sourcePath,
 			block: this.block,
@@ -217,6 +239,7 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 		component: Component,
 	): Promise<void> {
 		let cursor = variant.content.from;
+		let index = 0;
 		const children = [...variant.children].sort(
 			(left, right) => left.range.from - right.range.from,
 		);
@@ -226,6 +249,8 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 					this.source.slice(cursor, child.range.from),
 					target,
 					component,
+					variant.normalizedLabel,
+					index,
 				);
 			}
 			const nested = target.createDiv({ cls: 'section-variants-nested' });
@@ -237,13 +262,17 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 				child,
 			);
 			component.addChild(renderer);
+			this.nestedRenderers.push(renderer);
 			cursor = child.range.to;
+			index++;
 		}
 		if (cursor < variant.content.to) {
 			await this.renderMarkdown(
 				this.source.slice(cursor, variant.content.to),
 				target,
 				component,
+				variant.normalizedLabel,
+				index,
 			);
 		}
 	}
@@ -252,18 +281,24 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 		markdown: string,
 		target: HTMLElement,
 		component: Component,
+		label: string,
+		index: number,
 	): Promise<void> {
 		if (!markdown.trim()) return;
-		await MarkdownRenderer.render(
+		await renderNativePreview(
 			this.host.app,
 			markdown,
 			target,
 			this.sourcePath,
 			component,
+			(before, after) => applyPreviewEdit(this.host, this.sourcePath, this.block, label, index, before, after, target),
 		);
 	}
 
 	private clearRenderComponent(): void {
+		this.headers.clear();
+		this.nestedRenderers.length = 0;
+		this.controls = undefined;
 		this.columnsContent = undefined;
 		this.columnWidths = undefined;
 		this.columnResponsive = 'responsive';

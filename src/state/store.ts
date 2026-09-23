@@ -43,7 +43,6 @@ export class StateStore {
 	private data: StoredData = createStoredData();
 	private readonly listeners = new Set<Listener>();
 	private readonly sessionHidden = new Map<string, Set<string>>();
-	private readonly editingVariants = new Map<string, string>();
 	private saveTimer?: number;
 
 	constructor(private readonly plugin: Plugin) {}
@@ -101,9 +100,6 @@ export class StateStore {
 			state.globalMode = 'follow';
 			pruneBlockState(note, block.identityKey);
 		}
-		if (resolveBlockState(block, note, this.settings).view !== 'columns') {
-			this.editingVariants.delete(sessionKey(path, block.identityKey));
-		}
 		this.changed({ scope: 'block', path, blockKey: block.identityKey });
 		return { label, view };
 	}
@@ -116,9 +112,6 @@ export class StateStore {
 	unfollowGlobalState(path: string, block: VariantBlock): void {
 		const note = this.getNote(path, true) as PersistedNoteState;
 		ensureBlockState(note, block.identityKey).globalMode = 'local';
-		if (resolveBlockState(block, note, this.settings).view !== 'columns') {
-			this.editingVariants.delete(sessionKey(path, block.identityKey));
-		}
 		this.changed({ scope: 'block', path, blockKey: block.identityKey });
 	}
 
@@ -128,9 +121,6 @@ export class StateStore {
 		state.view = view;
 		state.globalMode = 'local';
 		delete state.viewMode;
-		if (view !== 'columns') {
-			this.editingVariants.delete(sessionKey(path, block.identityKey));
-		}
 		this.changed({ scope: 'block', path, blockKey: block.identityKey });
 	}
 
@@ -148,11 +138,6 @@ export class StateStore {
 	applyViewAcrossNote(path: string, parsed: ParsedNote, view: ViewMode): void {
 		const note = this.getNote(path, true) as PersistedNoteState;
 		applyGlobalView(note, view);
-		for (const block of parsed.blocks.filter((candidate) => candidate.valid)) {
-			if (resolveBlockState(block, note, this.settings).view !== 'columns') {
-				this.editingVariants.delete(sessionKey(path, block.identityKey));
-			}
-		}
 		this.changed({ scope: 'note', path });
 	}
 
@@ -177,9 +162,6 @@ export class StateStore {
 				state.globalMode = following ? 'follow' : 'local';
 				pruneBlockState(note, block.identityKey);
 			}
-			if (resolveBlockState(block, note, this.settings).view !== 'columns') {
-				this.editingVariants.delete(sessionKey(path, block.identityKey));
-			}
 		}
 		this.changed({ scope: 'note', path });
 		return { applied: blocks.length };
@@ -193,13 +175,7 @@ export class StateStore {
 			new Set((persisted?.savedHiddenLabels ?? []).map(normalizeLabel));
 		const normalized = normalizeLabel(label);
 		if (hidden.has(normalized)) hidden.delete(normalized);
-		else {
-			hidden.add(normalized);
-			const editing = this.editingVariants.get(key);
-			if (editing && normalizeLabel(editing) === normalized) {
-				this.editingVariants.delete(key);
-			}
-		}
+		else hidden.add(normalized);
 		this.sessionHidden.set(key, hidden);
 		this.emit({ scope: 'block', path, blockKey: block.identityKey });
 	}
@@ -227,13 +203,7 @@ export class StateStore {
 			const key = sessionKey(path, block.identityKey);
 			const hidden = new Set(this.resolve(path, block).hiddenLabels);
 			if (visible) hidden.delete(normalized);
-			else {
-				hidden.add(normalized);
-				const editing = this.editingVariants.get(key);
-				if (editing && normalizeLabel(editing) === normalized) {
-					this.editingVariants.delete(key);
-				}
-			}
+			else hidden.add(normalized);
 			this.sessionHidden.set(key, hidden);
 		}
 		this.emit({ scope: 'note', path });
@@ -265,7 +235,6 @@ export class StateStore {
 				: new Set(block.variants.map((variant) => variant.normalizedLabel));
 			columns += block.variants.length;
 			this.sessionHidden.set(key, hidden);
-			if (!visible) this.editingVariants.delete(key);
 		}
 		this.emit({ scope: 'note', path });
 		return { visible, blocks: blocks.length, columns };
@@ -293,17 +262,6 @@ export class StateStore {
 
 	isStickyVisible(path: string): boolean {
 		return this.getNote(path)?.stickyVisible ?? this.settings.stickyControlEnabled;
-	}
-
-	setEditingVariant(path: string, block: VariantBlock, label?: string): void {
-		const key = sessionKey(path, block.identityKey);
-		if (label) this.editingVariants.set(key, label);
-		else this.editingVariants.delete(key);
-		this.emit({ scope: 'block', path, blockKey: block.identityKey });
-	}
-
-	getEditingVariant(path: string, block: VariantBlock): string | undefined {
-		return this.editingVariants.get(sessionKey(path, block.identityKey));
 	}
 
 	rekeyBlockState(
@@ -361,10 +319,6 @@ export class StateStore {
 			const key = sessionKey(path, after.identityKey);
 			const hidden = this.sessionHidden.get(key);
 			if (hidden?.delete(oldNormalized)) hidden.add(newNormalized);
-			const editing = this.editingVariants.get(key);
-			if (editing && normalizeLabel(editing) === oldNormalized) {
-				this.editingVariants.set(key, newLabel);
-			}
 		}
 		if (migrateGlobal && note) note.globalLabel = newLabel;
 		this.changed({ scope: 'note', path });
@@ -392,10 +346,6 @@ export class StateStore {
 		if (note) pruneBlockState(note, after.identityKey);
 		const key = sessionKey(path, after.identityKey);
 		this.sessionHidden.get(key)?.delete(normalized);
-		const editing = this.editingVariants.get(key);
-		if (editing && normalizeLabel(editing) === normalized) {
-			this.editingVariants.delete(key);
-		}
 		this.changed({ scope: 'note', path });
 	}
 
@@ -410,7 +360,6 @@ export class StateStore {
 		for (const block of removed) {
 			if (note) delete note.blocks[block.identityKey];
 			this.sessionHidden.delete(sessionKey(path, block.identityKey));
-			this.editingVariants.delete(sessionKey(path, block.identityKey));
 		}
 		for (const { before, after } of mappings) {
 			this.rekeyBlockStateInternal(path, before.identityKey, after.identityKey);
@@ -428,7 +377,6 @@ export class StateStore {
 		state.viewMode = 'authored';
 		state.globalMode = 'local';
 		this.sessionHidden.delete(sessionKey(path, block.identityKey));
-		this.editingVariants.delete(sessionKey(path, block.identityKey));
 		this.changed({ scope: 'block', path, blockKey: block.identityKey });
 	}
 
@@ -436,9 +384,6 @@ export class StateStore {
 		delete this.data.notes[path];
 		for (const key of [...this.sessionHidden.keys()]) {
 			if (key.startsWith(`${path}\u0000`)) this.sessionHidden.delete(key);
-		}
-		for (const key of [...this.editingVariants.keys()]) {
-			if (key.startsWith(`${path}\u0000`)) this.editingVariants.delete(key);
 		}
 		this.changed({ scope: 'note', path });
 	}
@@ -507,26 +452,18 @@ export class StateStore {
 	}
 
 	private moveSessionKeys(oldPath: string, newPath: string): void {
-		for (const map of [this.sessionHidden, this.editingVariants]) {
-			for (const key of [...map.keys()]) {
-				if (!key.startsWith(`${oldPath}\u0000`)) continue;
-				const value = map.get(key);
-				if (value === undefined) continue;
-				map.delete(key);
-				// Cast: both maps are keyed identically, values differ by type.
-				(map as Map<string, unknown>).set(
-					`${newPath}${key.slice(oldPath.length)}`,
-					value,
-				);
-			}
+		for (const key of [...this.sessionHidden.keys()]) {
+			if (!key.startsWith(`${oldPath}\u0000`)) continue;
+			const value = this.sessionHidden.get(key);
+			if (value === undefined) continue;
+			this.sessionHidden.delete(key);
+			this.sessionHidden.set(`${newPath}${key.slice(oldPath.length)}`, value);
 		}
 	}
 
 	private clearSessionKeys(path: string): void {
-		for (const map of [this.sessionHidden, this.editingVariants]) {
-			for (const key of [...map.keys()]) {
-				if (key.startsWith(`${path}\u0000`)) map.delete(key);
-			}
+		for (const key of [...this.sessionHidden.keys()]) {
+			if (key.startsWith(`${path}\u0000`)) this.sessionHidden.delete(key);
 		}
 	}
 
@@ -552,11 +489,6 @@ export class StateStore {
 			delete note.blocks[oldKey];
 		}
 		moveMapValue(this.sessionHidden, sessionKey(path, oldKey), sessionKey(path, newKey));
-		moveMapValue(
-			this.editingVariants,
-			sessionKey(path, oldKey),
-			sessionKey(path, newKey),
-		);
 	}
 
 	updateSettings(settings: SectionVariantsSettings): void {

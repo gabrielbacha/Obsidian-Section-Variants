@@ -50,8 +50,13 @@ export class ReadingViewCoordinator {
 	}
 
 	postProcess(el: HTMLElement, context: MarkdownPostProcessorContext): void {
-		if (el.closest('.section-variants-root')) return;
-		const root = el.closest<HTMLElement>('.markdown-preview-view') ?? el;
+		// Native preview sections are post-processed before attachment. The host
+		// supplies their owning sizer in the context; closest(el) alone would
+		// treat every detached section as a separate note (or recurse into a
+		// fragment preview with fragment-local source lines).
+		const container = (context as MarkdownPostProcessorContext & { containerEl?: HTMLElement }).containerEl;
+		if (el.closest('.section-variants-root, .section-variants-preview') || container?.closest('.section-variants-root, .section-variants-preview')) return;
+		const root = el.closest<HTMLElement>('.markdown-preview-view') ?? container?.closest<HTMLElement>('.markdown-preview-view') ?? el;
 		const info = context.getSectionInfo(el);
 		if (!info) return;
 		const current = this.rootStates.get(root);

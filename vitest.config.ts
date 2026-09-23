@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+	test: { include: ['src/**/*.test.ts'] },
 	plugins: [
 		{
 			name: 'section-variants-test-styles',

@@ -63,7 +63,8 @@ The canonical container is `variants`. Additional aliases can be enabled in **Se
 - The note-wide controller's persistent layers marker has an accent-colored border so it remains distinct from individual actions. Turning the globe off restores local block state without clearing or visually deselecting the saved global label, view, and narrow-layout choices.
 - Every note-wide action affects only boxes following global state. Opted-out boxes retain their local variant, view, layout, column visibility, and active editor even while the toolbar displays remembered global choices.
 - The layers marker menu contains only **Hide note control**. Restore a hidden control from the command palette with **Section Variants: Show note control**.
-- In Live Preview, Toggle content and every visible Columns panel are directly editable with Obsidian's normal Live Preview formatting. In Columns view, the A/B label controls show or hide their matching columns. Links, checkboxes, embeds, buttons, and nested controls keep their normal behavior.
+- In Live Preview, click a column's text to edit directly inside that column using Obsidian's native Markdown editor. Other columns stay visible, and widths and headers stay in place. Click another column to switch, or press `Escape` or click outside to return to its rendered preview. Normal Live Preview syntax and wrapping changes are expected. Links, checkboxes, embeds, buttons, and controls retain their own behavior. Toggle content remains directly editable in the note editor.
+- Variant previews use Obsidian's native preview component, including its section wrappers, list bullets, callouts, and embeds. A native HTML boundary prevents the outer editor's whitespace rules from adding blank lines. The plugin only sizes the preview container; it does not override prose spacing. Theme and snippet changes apply to mounted previews. Editing uses native Live Preview styling; differences deliberately defined by Obsidian or the theme between embedded and Reading View content are preserved.
 - Source Mode always displays the complete Markdown source.
 
 Open the command palette for insertion, cycling, note-wide actions, resets, sticky-control visibility, focused-block ID and column-visibility actions, and HTML export. No default hotkeys are assigned.
@@ -90,7 +91,7 @@ Authored defaults remain in Markdown. Current selections, view choices, sticky-c
 
 Block-specific label, view, and authored narrow-layout choices are stored separately from note-wide global state. **Follow global state** is a checkbox toggle: while enabled, compatible global values are displayed without erasing the saved block-specific values; disabling it restores exactly those earlier local values. The note-wide globe toggles every valid block between following global state and its saved block-specific state. A blue marker dot means the block is following global state. Authored differences instead appear as a **Modified** badge beside **Reset to authored defaults** in the context menu. Stable-ID creation and label renames migrate these states to the new identity.
 
-Inactive variants are hidden in Live Preview. Each valid block is one stable framed widget, so its toolbar and complete border remain attached while its Live Preview-formatted content updates. Menu-driven structural changes use the open note's editor transaction, appearing immediately and participating in normal undo/redo; closed notes use an atomic vault update. Live Preview retains Obsidian's native selection and editing behavior: whole-note and cross-block selections can delete, cut, paste over, or replace complete variants blocks. Switch to Source mode when you want to inspect or edit individual fences directly.
+Inactive Toggle variants are hidden in Live Preview. Columns retain their comparison grid, with an Obsidian-owned editor mounted only for the active column. Its changes and undo/redo are routed through the original note; no cloned editor state or temporary Markdown files are used. The native editor adapter uses an internal Obsidian interface and reports an error without changing the note if that interface is unavailable. Menu-driven structural changes use the open note's editor transaction; closed notes use an atomic vault update. Whole-note and cross-block selections in the outer editor can replace complete variants blocks. Select-all inside a column selects that variant's content. Source Mode exposes individual fences directly.
 
 Blocks use an explicit Pandoc ID, a following Obsidian block ID, or a structural fingerprint for persistence. If duplicate fingerprints become ambiguous, use **Add stable block ID** or enable automatic IDs.
 
@@ -112,11 +113,15 @@ Requirements: Node.js 18 or newer and npm.
 ```bash
 npm install
 npm test
+npx playwright install chromium
+npm run test:browser
 npm run build
 npm run lint
 ```
 
 `npm run check` runs all release gates. The production release consists of `main.js`, `manifest.json`, and `styles.css`.
+
+`npm run test:obsidian` additionally tests the installed desktop app in an isolated temporary vault. Set `OBSIDIAN_EXECUTABLE` to its executable, optionally `OBSIDIAN_ASAR` to the installed update package and `OBSIDIAN_THEME_DIR` to a theme directory. It verifies in-column editing and undo, compares native preview markup and computed prose styles at equal widths, checks light/dark and live theme changes, and exercises preview checkbox edits. The test copies only the built plugin and optional theme into its fixture; it does not operate on existing vault windows. Native preview integration is guarded: incompatible hosts retain a static read-only preview while in-column editing remains available.
 
 ## License
 

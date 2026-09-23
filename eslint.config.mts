@@ -11,6 +11,10 @@ export default defineConfig(
 		'validate-release.mjs',
 		// Build tooling, never bundled into the plugin.
 		'vitest.config.ts',
+		'playwright.config.mjs',
+		'tests/browser/**',
+		'tests/obsidian-runtime.mjs',
+		'tests/obsidian-preview-checks.mjs',
 		'versions.json',
 		'main.js',
 		'package.json',

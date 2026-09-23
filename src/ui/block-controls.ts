@@ -11,6 +11,7 @@ export interface BlockControlsOptions {
 	block: VariantBlock;
 	parent: HTMLElement;
 	mode: 'toggle' | 'columns';
+	showLabels?: boolean;
 	onSelectLabel: (label: string, event: MouseEvent) => void;
 }
 
@@ -20,8 +21,9 @@ export function createBlockControls({
 	block,
 	parent,
 	mode,
+	showLabels = true,
 	onSelectLabel,
-}: BlockControlsOptions): void {
+}: BlockControlsOptions): { rebind(next: VariantBlock): void } {
 	const state = host.store.resolve(path, block);
 	createVariantMarker(parent, {
 		ariaLabel: 'Open variants menu',
@@ -33,7 +35,7 @@ export function createBlockControls({
 	const active = block.variants.find(
 		(variant) => variant.normalizedLabel === normalizeLabel(state.selectedLabel),
 	);
-	createSegmentedControl(reveal, {
+	if (showLabels) createSegmentedControl(reveal, {
 		cls: 'section-variants-labels',
 		ariaLabel: mode === 'columns' ? 'Visible columns' : 'Variant',
 		value: mode === 'toggle' ? active?.label : undefined,
@@ -91,6 +93,7 @@ export function createBlockControls({
 		setTooltip(restore, `Restore ${state.hiddenLabels.size} hidden column${state.hiddenLabels.size === 1 ? '' : 's'}`);
 		restore.addEventListener('click', () => host.store.restoreColumns(path, block));
 	}
+	return { rebind(next) { block = next; } };
 }
 
 async function selectView(

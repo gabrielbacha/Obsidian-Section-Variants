@@ -169,14 +169,12 @@ describe('state identity migration', () => {
 		const after = parseNote(`${blockSource()}\n^variants-stable`).blocks[0]!;
 		store.setSelectedLabel('Note.md', before, 'B');
 		store.toggleHidden('Note.md', before, 'A');
-		store.setEditingVariant('Note.md', before, 'B');
 
 		store.rekeyBlockState('Note.md', before, after);
 
 		expect(store.getNote('Note.md')?.blocks[before.identityKey]).toBeUndefined();
 		expect(store.resolve('Note.md', after).selectedLabel).toBe('B');
 		expect(store.resolve('Note.md', after).hiddenLabels.has('a')).toBe(true);
-		expect(store.getEditingVariant('Note.md', after)).toBe('B');
 	});
 
 	it('migrates local rename state while leaving a note-wide label local', async () => {
@@ -187,7 +185,6 @@ describe('state identity migration', () => {
 		note.globalLabel = 'A';
 		store.setSelectedLabel('Note.md', before, 'A');
 		store.toggleHidden('Note.md', before, 'A');
-		store.setEditingVariant('Note.md', before, 'A');
 
 		store.migrateRenamedLabels(
 			'Note.md',
@@ -200,7 +197,6 @@ describe('state identity migration', () => {
 		expect(note.globalLabel).toBe('A');
 		expect(store.resolve('Note.md', after).selectedLabel).toBe('Alpha');
 		expect(store.resolve('Note.md', after).hiddenLabels.has('alpha')).toBe(true);
-		expect(store.getEditingVariant('Note.md', after)).toBe('Alpha');
 	});
 
 	it('migrates the global label for an across-note rename', async () => {
@@ -230,13 +226,11 @@ describe('state identity migration', () => {
 		store.setSelectedLabel('Note.md', before, 'B');
 		store.toggleHidden('Note.md', before, 'B');
 		store.saveHidden('Note.md', before);
-		store.setEditingVariant('Note.md', before, 'B');
 
 		store.migrateDeletedVariant('Note.md', before, after, 'B');
 
 		expect(store.resolve('Note.md', after).selectedLabel).toBe('A');
 		expect(store.resolve('Note.md', after).hiddenLabels.has('b')).toBe(false);
-		expect(store.getEditingVariant('Note.md', after)).toBeUndefined();
 	});
 
 	it('global following preserves the local state for later restoration', async () => {
@@ -354,30 +348,6 @@ describe('state identity migration', () => {
 		});
 	});
 
-	it('clears inline editing when its column or view becomes unavailable', async () => {
-		const store = await createStore();
-		const block = parseNote(blockSource()).blocks[0]!;
-		store.setView('Note.md', block, 'columns');
-		store.setEditingVariant('Note.md', block, 'B');
-
-		store.toggleHidden('Note.md', block, 'B');
-		expect(store.getEditingVariant('Note.md', block)).toBeUndefined();
-
-		store.restoreColumns('Note.md', block);
-		expect(store.resolve('Note.md', block).hiddenLabels.size).toBe(0);
-		store.setEditingVariant('Note.md', block, 'A');
-		store.applyViewAcrossNote('Note.md', parseNote(blockSource()), 'toggle');
-		expect(store.getEditingVariant('Note.md', block)).toBe('A');
-
-		store.setView('Note.md', block, 'toggle');
-		expect(store.getEditingVariant('Note.md', block)).toBeUndefined();
-
-		store.setEditingVariant('Note.md', block, 'A');
-		store.getNote('Note.md', true)!.globalView = 'toggle';
-		store.followGlobalState('Note.md', block);
-		expect(store.getEditingVariant('Note.md', block)).toBeUndefined();
-	});
-
 	it('toggles a matching column all off or all on across the note', async () => {
 		const store = await createStore();
 		const parsed = parseNote([
@@ -389,14 +359,10 @@ describe('state identity migration', () => {
 		].join('\n\n'));
 		const [first, second] = parsed.blocks;
 		if (!first || !second) throw new Error('Missing fixture blocks');
-		store.setEditingVariant('Note.md', first, 'A');
-
 		const hidden = store.toggleColumnAcrossNote('Note.md', parsed, 'A');
 		expect(hidden).toEqual({ visible: false, applied: 2, skipped: 1 });
 		expect(store.resolve('Note.md', first).hiddenLabels.has('a')).toBe(true);
 		expect(store.resolve('Note.md', second).hiddenLabels.has('a')).toBe(true);
-		expect(store.getEditingVariant('Note.md', first)).toBeUndefined();
-
 		store.toggleHidden('Note.md', first, 'A');
 		const shown = store.toggleColumnAcrossNote('Note.md', parsed, 'A');
 		expect(shown).toEqual({ visible: true, applied: 2, skipped: 1 });
@@ -412,15 +378,11 @@ describe('state identity migration', () => {
 		].join('\n\n'));
 		const first = parsed.blocks[0];
 		if (!first) throw new Error('Missing fixture block');
-		store.setEditingVariant('Note.md', first, 'A');
-
 		const hidden = store.toggleAllColumnsAcrossNote('Note.md', parsed);
 		expect(hidden).toEqual({ visible: false, blocks: 2, columns: 4 });
 		for (const block of parsed.blocks) {
 			expect(store.resolve('Note.md', block).hiddenLabels.size).toBe(2);
 		}
-		expect(store.getEditingVariant('Note.md', first)).toBeUndefined();
-
 		const shown = store.toggleAllColumnsAcrossNote('Note.md', parsed);
 		expect(shown).toEqual({ visible: true, blocks: 2, columns: 4 });
 		for (const block of parsed.blocks) {
@@ -434,7 +396,6 @@ describe('state identity migration', () => {
 		const [following, local] = parsed.blocks;
 		if (!following || !local) throw new Error('Missing fixture blocks');
 		store.unfollowGlobalState('Note.md', local);
-		store.setEditingVariant('Note.md', local, 'A');
 
 		expect(store.toggleColumnAcrossNote('Note.md', parsed, 'A')).toEqual({
 			visible: false,
@@ -443,11 +404,9 @@ describe('state identity migration', () => {
 		});
 		expect(store.resolve('Note.md', following).hiddenLabels.has('a')).toBe(true);
 		expect(store.resolve('Note.md', local).hiddenLabels.size).toBe(0);
-		expect(store.getEditingVariant('Note.md', local)).toBe('A');
 
 		store.toggleAllColumnsAcrossNote('Note.md', parsed);
 		expect(store.resolve('Note.md', local).hiddenLabels.size).toBe(0);
-		expect(store.getEditingVariant('Note.md', local)).toBe('A');
 	});
 
 	it('makes every note-wide action inert for blocks after the globe is off', async () => {
@@ -485,7 +444,6 @@ describe('state identity migration', () => {
 		store.setSelectedLabel('Note.md', removed, 'A');
 		store.setSelectedLabel('Note.md', survivor, 'B');
 		store.toggleHidden('Note.md', survivor, 'A');
-		store.setEditingVariant('Note.md', survivor, 'B');
 
 		store.migrateDeletedBlocks(
 			'Note.md',
@@ -495,7 +453,6 @@ describe('state identity migration', () => {
 
 		expect(store.resolve('Note.md', after).selectedLabel).toBe('B');
 		expect(store.resolve('Note.md', after).hiddenLabels.has('a')).toBe(true);
-		expect(store.getEditingVariant('Note.md', after)).toBe('B');
 		expect(Object.keys(store.getNote('Note.md')?.blocks ?? {})).toEqual([
 			after.identityKey,
 		]);

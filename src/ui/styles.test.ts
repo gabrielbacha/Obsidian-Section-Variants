@@ -143,11 +143,9 @@ describe('presentation safety selectors', () => {
 		);
 	});
 
-	it('removes spacing only from a leading variant heading', () => {
-		expect(CSS).toContain('> .HyperMD-header:first-child');
-		expect(CSS).toMatch(
-			/section-variants-column-header[\s\S]*\+ :is\(h1, h2, h3, h4, h5, h6\)[\s\S]*margin-block-start:\s*0 !important/su,
-		);
+	it('leaves rendered heading typography and spacing to the theme', () => {
+		expect(CSS).not.toContain('margin-block-start: 0 !important');
+		expect(CSS).not.toContain('padding-block-start: 0 !important');
 	});
 
 	it('keeps the toolbar inside the widget instead of translating it into clipping', () => {
@@ -171,17 +169,12 @@ describe('presentation safety selectors', () => {
 		);
 	});
 
-	it('contains nested editors without adding an internal editing frame', () => {
-		expect(CSS).toMatch(
-			/\.section-variants-inline-editor \.cm-scroller\s*\{[^}]*overflow:\s*hidden/su,
-		);
-		expect(CSS).not.toContain(
-			'.section-variants-panel.is-editing:focus-within',
-		);
-		expect(CSS).toMatch(
-			/\.section-variants-inline-editor \.cm-editor\.cm-focused\s*\{[^}]*outline:\s*none/su,
-		);
-	});
+		it('frames native content without changing authored line styles', () => {
+			expect(CSS).toContain('.section-variants-native-frame');
+			expect(CSS).not.toContain('.cm-line.section-variants-native-editing-line');
+			expect(CSS).not.toContain('.section-variants-editing-placeholder');
+			expect(CSS).not.toContain('.section-variants-inline-editor');
+		});
 
 	it('does not animate grid layout properties', () => {
 		expect(CSS).not.toMatch(/transition:\s*grid-template-columns/u);
