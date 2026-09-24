@@ -1,6 +1,6 @@
 {
 	"name": "section-variants",
-	"version": "1.1.0",
+	"version": "1.1.1",
 	"description": "Switch, compare, and manage parallel versions of Markdown sections in Obsidian.",
 	"main": "main.js",
 	"type": "module",
