@@ -32,6 +32,7 @@ import {
 } from './core/types';
 import {
 	createLivePreviewExtension,
+	reconcileLivePreviewEditor,
 	refreshLivePreviewEditors,
 } from './editor/live-preview';
 import { VariantsEditorSuggest } from './editor/suggest';
@@ -75,6 +76,7 @@ export default class SectionVariantsPlugin
 	private stickyRefreshAll = false;
 	private readonly vaultRefreshGenerations = new LatestPathGeneration();
 	private readonly vaultRefreshTimers = new Map<string, number>();
+	private readonly lastDiskSource = new Map<string, string>();
 
 	async onload(): Promise<void> {
 		this.store = new StateStore(this);
@@ -95,7 +97,10 @@ export default class SectionVariantsPlugin
 		this.addSettingTab(new SectionVariantsSettingTab(this.app, this));
 
 		this.registerEvent(
-			this.app.workspace.on('file-open', () => this.scheduleViewRefresh()),
+			this.app.workspace.on('file-open', (file) => {
+				this.scheduleViewRefresh();
+				if (file instanceof TFile) this.scheduleVaultRefresh(file.path);
+			}),
 		);
 		this.registerEvent(
 			this.app.workspace.on('active-leaf-change', () =>
@@ -133,6 +138,10 @@ export default class SectionVariantsPlugin
 		this.app.workspace.onLayoutReady(() => {
 			this.pruneMissingNotes();
 			this.refreshAllViews();
+			for (const leaf of this.app.workspace.getLeavesOfType('markdown')) {
+				const view = leaf.view;
+				if (view instanceof MarkdownView && view.file) this.scheduleVaultRefresh(view.file.path);
+			}
 		});
 	}
 
@@ -146,6 +155,7 @@ export default class SectionVariantsPlugin
 		}
 		this.vaultRefreshTimers.clear();
 		this.vaultRefreshGenerations.clear();
+		this.lastDiskSource.clear();
 		this.stickyControls?.destroy();
 		void this.store?.flush();
 	}
@@ -553,12 +563,49 @@ export default class SectionVariantsPlugin
 		try {
 			const file = this.app.vault.getAbstractFileByPath(path);
 			if (!(file instanceof TFile)) return;
-			const source = await this.app.vault.cachedRead(file);
+			// A disk edit may precede Obsidian's read cache invalidation. This read is
+			// also the authority used to reconcile an open Markdown editor.
+			const source = await this.app.vault.read(file);
 			if (!this.vaultRefreshGenerations.isCurrent(path, generation)) return;
+			const previous = this.lastDiskSource.get(path);
+			if (previous !== source || previous === undefined) {
+				const copied = new Set<string>();
+				for (const leaf of this.app.workspace.getLeavesOfType('markdown')) {
+					const view = leaf.view;
+					if (!(view instanceof MarkdownView) || view.file?.path !== path || view.getMode() !== 'source') continue;
+					const local = view.editor.getValue();
+					if (local === source) continue;
+					if ((previous === undefined || local !== previous) && !copied.has(local)) {
+						const copyPath = await this.saveConflictCopy(file, local);
+						copied.add(local);
+						new Notice(`Section Variants preserved unsaved edits in ${copyPath}. The external file is now shown.`);
+						if (!this.vaultRefreshGenerations.isCurrent(path, generation)) return;
+					}
+					if (view.editor.getValue() !== local) throw new Error('The open editor changed while the recovery copy was being saved.');
+					if (!reconcileLivePreviewEditor(view.editor, source)) view.editor.setValue(source);
+					if (view.editor.getValue() !== source) throw new Error('The open editor rejected the external file change.');
+				}
+				this.lastDiskSource.set(path, source);
+			}
 			this.readingCoordinator.rebind(path, source);
 			this.refreshAllViews(path);
-		} catch {
-			// A concurrent rename or deletion invalidates this refresh naturally.
+		} catch (error) {
+			// Never discard the local editor if the recovery copy could not be saved.
+			console.error('Section Variants: could not reconcile an external file change', error);
+			new Notice('Section variants could not safely load an external file change. Check the note before editing.');
+		}
+	}
+
+	private async saveConflictCopy(file: TFile, content: string): Promise<string> {
+		const folder = 'Section Variants Conflicts';
+		if (!this.app.vault.getAbstractFileByPath(folder)) await this.app.vault.createFolder(folder);
+		const stamp = new Date().toISOString().replace(/[:.]/gu, '-');
+		const name = file.basename.replace(/[^\p{L}\p{N} _-]/gu, '_');
+		for (let index = 0; ; index += 1) {
+			const path = `${folder}/${name} ${stamp}${index ? ` ${index}` : ''}.md`;
+			if (this.app.vault.getAbstractFileByPath(path)) continue;
+			await this.app.vault.create(path, content);
+			return path;
 		}
 	}
 
@@ -577,6 +624,7 @@ export default class SectionVariantsPlugin
 	private handleDelete(file: TAbstractFile): void {
 		if (file instanceof TFile) {
 			this.invalidateVaultRefresh(file.path);
+			this.lastDiskSource.delete(file.path);
 			this.store.deleteNote(file.path);
 		} else if (file instanceof TFolder) this.store.deleteFolder(file.path);
 	}
@@ -585,6 +633,8 @@ export default class SectionVariantsPlugin
 		if (file instanceof TFile) {
 			this.invalidateVaultRefresh(oldPath);
 			this.invalidateVaultRefresh(file.path);
+			this.lastDiskSource.delete(oldPath);
+			this.lastDiskSource.delete(file.path);
 			this.store.renameNote(oldPath, file.path);
 		} else if (file instanceof TFolder) this.store.renameFolder(oldPath, file.path);
 	}

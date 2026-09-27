@@ -20,6 +20,7 @@ import {
 } from '@codemirror/view';
 import {
 	Component,
+	Editor,
 	editorInfoField,
 	editorLivePreviewField,
 	MarkdownFileInfo,
@@ -27,6 +28,7 @@ import {
 	setIcon,
 } from 'obsidian';
 import { visibleColumnWidths } from '../core/column-ratios';
+import { resolveCurrentBlock } from '../core/block-resolution';
 import {
 	normalizeLabel,
 	ParsedNote,
@@ -83,7 +85,16 @@ const refreshField = StateField.define<number>({
 	},
 });
 const editorViews = new Set<EditorView>();
+const externalReconcilers = new Map<Editor, (source: string) => void>();
 const activationCoords = new WeakMap<EditorView, { x: number; y: number }>();
+
+/** Replace a stale pane document without tearing down its active column editor. */
+export function reconcileLivePreviewEditor(editor: Editor, source: string): boolean {
+	const reconcile = externalReconcilers.get(editor);
+	if (!reconcile) return false;
+	reconcile(source);
+	return true;
+}
 
 /** Ask live-preview editors to rebuild, optionally for one note only. */
 export function refreshLivePreviewEditors(path?: string): void {
@@ -201,7 +212,27 @@ export function createLivePreviewExtension(
 			this.ownerDocument = view.dom.ownerDocument;
 			if (!view.state.field(editorInfoField, false)?.editor) return;
 			const owner: MarkdownFileInfo & { getViewType?: () => string } = view.state.field(editorInfoField);
-			if (!(columnEditorOwner in owner) && owner.getViewType?.() === 'markdown') editorViews.add(view);
+			if (!(columnEditorOwner in owner) && owner.getViewType?.() === 'markdown') {
+				editorViews.add(view);
+				externalReconcilers.set(owner.editor!, (source) => {
+					const previous = view.state.doc.toString();
+					if (previous === source) return;
+					const target = view.state.field(editingField);
+					const oldBlock = target && host.parse(previous).blocks.find(block => block.opening.from === target.blockFrom);
+					const newBlock = oldBlock && resolveCurrentBlock(oldBlock, host.parse(source).blocks);
+					const variant = newBlock?.variants.find(candidate => candidate.normalizedLabel === normalizeLabel(target?.label ?? ''));
+					const anchor = variant?.content.from;
+					let from = 0;
+					while (from < previous.length && from < source.length && previous[from] === source[from]) from++;
+					let suffix = 0;
+					while (suffix < previous.length - from && suffix < source.length - from && previous[previous.length - suffix - 1] === source[source.length - suffix - 1]) suffix++;
+					view.dispatch({
+						changes: { from, to: previous.length - suffix, insert: source.slice(from, source.length - suffix) },
+						...(anchor === undefined ? {} : { selection: { anchor } }),
+						annotations: Transaction.addToHistory.of(false),
+					});
+				});
+			}
 			this.frames = new NativeFrames(view, () => view.state.field(decorationsField).frames);
 			this.ownerDocument.addEventListener(
 				'pointerdown',
@@ -294,6 +325,8 @@ export function createLivePreviewExtension(
 			this.ownerDocument.removeEventListener('pointercancel', this.handlePointerCancel, true);
 			this.ownerDocument.removeEventListener('click', this.handleClick, true);
 			editorViews.delete(this.view);
+			const editor = this.view.state.field(editorInfoField, false)?.editor;
+			if (editor) externalReconcilers.delete(editor);
 		}
 
 		private readonly handlePointerDown = (event: PointerEvent): void => {

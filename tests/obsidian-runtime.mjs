@@ -1,7 +1,7 @@
 // Opt-in integration test against an installed Obsidian, in an isolated vault.
 // Never opens, modifies, or closes the user's existing vault/window.
 import { chromium } from '@playwright/test';
-import { mkdtemp, mkdir, writeFile, copyFile, readFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, copyFile, readFile, readdir } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { tmpdir } from 'node:os';
@@ -70,6 +70,28 @@ try {
 	const before = await geometry();
 	await first.locator('p').click();
 	await first.locator('.section-variants-column-editor .cm-content').waitFor({ state: 'visible' });
+	const external = source.replace('Alpha original.', 'Alpha changed by an external agent.').replace('Outside.', 'Outside, changed by an external agent.');
+	await page.evaluate(() => {
+		window.externalTrace = [];
+		app.vault.on('modify', file => {
+			if (file.path !== 'Verification.md') return;
+			const view = app.workspace.getLeavesOfType('markdown').find(leaf => leaf.view.file?.path === file.path)?.view;
+			window.externalTrace.push({ event: 'modify', note: view?.editor.getValue(), active: app.workspace.activeEditor?.editor?.getValue?.() });
+		});
+	});
+	await writeFile(path.join(vault, 'Verification.md'), external);
+	await page.waitForFunction(expected => app.workspace.getLeavesOfType('markdown').find(leaf => leaf.view.file?.path === 'Verification.md')?.view.editor.getValue() === expected, external);
+	await first.locator('.section-variants-column-editor .cm-content').waitFor({ state: 'visible' });
+	const externalState = await page.evaluate(() => ({
+		note: app.workspace.getLeavesOfType('markdown').find(leaf => leaf.view.file?.path === 'Verification.md')?.view.editor.getValue(),
+		active: app.workspace.activeEditor?.editor?.getValue?.(),
+		trace: window.externalTrace,
+	}));
+	const diskAfterExternal = await readFile(path.join(vault, 'Verification.md'), 'utf8');
+	if (diskAfterExternal !== external || externalState.note !== external || externalState.active !== 'Alpha changed by an external agent.') throw new Error('External edit did not reach both editors: ' + JSON.stringify(externalState));
+	if (!externalState.trace.some(event => event.active === 'Alpha original.')) throw new Error('The test did not capture the stale child editor at the external modify event.');
+	await page.evaluate(async () => { await app.workspace.getLeavesOfType('markdown').find(leaf => leaf.view.file?.path === 'Verification.md').view.save(); });
+	if (await readFile(path.join(vault, 'Verification.md'), 'utf8') !== external) throw new Error('Save restored stale content after external edit.');
 	const gutterAlignment = await first.evaluate(panel => {
 		const column = panel.querySelector('.section-variants-column-editor');
 		const gutter = column.querySelector('.cm-gutters');
@@ -89,7 +111,10 @@ try {
 	const edited = await page.evaluate(() => app.workspace.getLeavesOfType('markdown').find(leaf => leaf.view.file?.path === 'Verification.md').view.editor.getValue());
 	if (!edited.includes('CHECK') || !edited.includes('Beta comparison')) throw new Error('Typing did not update the note safely.');
 	await page.keyboard.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z');
-	await page.waitForFunction(original => app.workspace.getLeavesOfType('markdown').find(leaf => leaf.view.file?.path === 'Verification.md').view.editor.getValue() === original, source);
+	await page.waitForFunction(original => app.workspace.getLeavesOfType('markdown').find(leaf => leaf.view.file?.path === 'Verification.md').view.editor.getValue() === original, external);
+	await page.evaluate(async () => { await app.workspace.getLeavesOfType('markdown').find(leaf => leaf.view.file?.path === 'Verification.md').view.save(); });
+	const diskAfterSave = await readFile(path.join(vault, 'Verification.md'), 'utf8');
+	if (diskAfterSave !== external) throw new Error('A save restored stale note content after external edit.');
 	await second.locator('p').click();
 	await second.locator('.section-variants-column-editor .cm-content').waitFor({ state: 'visible' });
 	if (!await first.locator('p').isVisible()) throw new Error('Previous column did not return to preview.');
@@ -97,6 +122,56 @@ try {
 	await page.locator('.section-variants-column-editor').waitFor({ state: 'detached' });
 	console.log('PASS: real Obsidian click → in-column native editor → type → note update → undo → switch → Escape.');
 	await verifyNativePreviews(page, directory);
+	await page.evaluate(async () => {
+		const leaf = app.workspace.getLeavesOfType('markdown').find(leaf => leaf.view.file?.path === 'Verification.md');
+		await leaf.setViewState({ type: 'markdown', state: { file: 'Verification.md', mode: 'source', source: false } });
+	});
+	await second.locator('p').first().click();
+	await second.locator('.section-variants-column-editor').waitFor({ state: 'visible' });
+	await second.locator('.section-variants-column-editor .cm-hmd-internal-link').first().waitFor({ state: 'attached' });
+	await second.locator('.section-variants-column-editor .internal-embed.is-loaded').first().waitFor({ state: 'attached' });
+	await page.keyboard.press('Escape');
+	const beforeIdle = await readFile(path.join(vault, 'Verification.md'), 'utf8');
+	const idleExternal = beforeIdle.replace('Alpha', 'Alpha changed while idle');
+	await writeFile(path.join(vault, 'Verification.md'), idleExternal);
+	await page.waitForFunction(expected => app.workspace.getLeavesOfType('markdown').find(leaf => leaf.view.file?.path === 'Verification.md').view.editor.getValue() === expected, idleExternal);
+	await page.waitForTimeout(250);
+	const beforeConflict = await readFile(path.join(vault, 'Verification.md'), 'utf8');
+	await page.evaluate(() => {
+		const view = app.workspace.getLeavesOfType('markdown').find(leaf => leaf.view.file?.path === 'Verification.md').view;
+		window.originalConflictSave = view.save;
+		view.save = async () => {};
+		view.editor.replaceRange('LOCAL UNSAVED\n', { line: 0, ch: 0 });
+	});
+	const conflictExternal = beforeConflict.replace('Alpha changed while idle', 'Alpha changed again by agent');
+	await writeFile(path.join(vault, 'Verification.md'), conflictExternal);
+	await page.evaluate(() => app.vault.trigger('modify', app.vault.getFileByPath('Verification.md')));
+	await page.waitForFunction(expected => app.workspace.getLeavesOfType('markdown').find(leaf => leaf.view.file?.path === 'Verification.md').view.editor.getValue() === expected, conflictExternal);
+	await page.evaluate(() => { const view = app.workspace.getLeavesOfType('markdown').find(leaf => leaf.view.file?.path === 'Verification.md').view; view.save = window.originalConflictSave; });
+	const conflictCopies = await readdir(path.join(vault, 'Section Variants Conflicts'));
+	if (conflictCopies.length !== 1 || !(await readFile(path.join(vault, 'Section Variants Conflicts', conflictCopies[0]), 'utf8')).includes('LOCAL UNSAVED')) throw new Error('Unsaved local version was not preserved.');
+	await page.waitForTimeout(700);
+	if (await readFile(path.join(vault, 'Verification.md'), 'utf8') !== conflictExternal) throw new Error('Conflict handling overwrote the external file.');
+	console.log('PASS: external writes replace clean panes; concurrent local edits get a visible recovery copy.');
+	await page.evaluate(async () => {
+		const file = app.vault.getFileByPath('Verification.md');
+		const leaf = app.workspace.getLeaf('split');
+		await leaf.openFile(file);
+		await leaf.setViewState({ type: 'markdown', state: { file: file.path, mode: 'source', source: false } });
+	});
+	const splitExternal = conflictExternal.replace('Alpha changed again by agent', 'Alpha from a split-pane agent edit');
+	await writeFile(path.join(vault, 'Verification.md'), splitExternal);
+	await page.waitForFunction(expected => {
+		const views = app.workspace.getLeavesOfType('markdown').filter(leaf => leaf.view.file?.path === 'Verification.md');
+		return views.length >= 2 && views.every(leaf => leaf.view.editor.getValue() === expected);
+	}, splitExternal);
+	const rapidFirst = splitExternal.replace('Alpha from a split-pane agent edit', 'Rapid first edit');
+	const rapidLast = rapidFirst.replace('Rapid first edit', 'Rapid final edit');
+	await writeFile(path.join(vault, 'Verification.md'), rapidFirst);
+	await writeFile(path.join(vault, 'Verification.md'), rapidLast);
+	await page.waitForFunction(expected => app.workspace.getLeavesOfType('markdown').filter(leaf => leaf.view.file?.path === 'Verification.md').every(leaf => leaf.view.editor.getValue() === expected), rapidLast);
+	if (await readFile(path.join(vault, 'Verification.md'), 'utf8') !== rapidLast) throw new Error('Rapid external writes were reverted.');
+	console.log('PASS: split panes and rapid external writes converge on the latest disk version.');
 } finally {
 	application.kill('SIGTERM');
 	// Only the subprocess created above: never find/terminate a user's app.

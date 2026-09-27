@@ -67,6 +67,8 @@ export class ColumnEditor {
 		this.variant = variant;
 		this.mount = parent.createDiv({ cls: 'section-variants-column-editor' });
 		this.owner = {
+			// Obsidian uses this context to render links and embeds. Only the
+			// outer MarkdownView saves: fragment edits forward to its document.
 			app, file: outer.state.field(editorInfoField).file,
 			hoverPopover: null, containerEl: this.mount,
 			[columnEditorOwner]: true,

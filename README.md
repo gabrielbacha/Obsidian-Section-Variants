@@ -93,6 +93,8 @@ Block-specific label, view, and authored narrow-layout choices are stored separa
 
 Inactive Toggle variants are hidden in Live Preview. Columns retain their comparison grid, with an Obsidian-owned editor mounted only for the active column. Its changes and undo/redo are routed through the original note; no cloned editor state or temporary Markdown files are used. The native editor adapter uses an internal Obsidian interface and reports an error without changing the note if that interface is unavailable. Menu-driven structural changes use the open note's editor transaction; closed notes use an atomic vault update. Whole-note and cross-block selections in the outer editor can replace complete variants blocks. Select-all inside a column selects that variant's content. Source Mode exposes individual fences directly.
 
+When another program changes an open note, the disk version is loaded into clean editor panes and active columns. If Obsidian has different unsaved text, Section Variants first saves that local text as a visible note in `Section Variants Conflicts`, then shows the external version. A notice gives the recovery note's path.
+
 Blocks use an explicit Pandoc ID, a following Obsidian block ID, or a structural fingerprint for persistence. If duplicate fingerprints become ambiguous, use **Add stable block ID** or enable automatic IDs.
 
 Malformed blocks remain fully visible. The warning explains the exact problem, and automatic fixing is offered only for an unambiguous missing final fence.
@@ -121,7 +123,7 @@ npm run lint
 
 `npm run check` runs all release gates. The production release consists of `main.js`, `manifest.json`, and `styles.css`.
 
-`npm run test:obsidian` additionally tests the installed desktop app in an isolated temporary vault. Set `OBSIDIAN_EXECUTABLE` to its executable, optionally `OBSIDIAN_ASAR` to the installed update package and `OBSIDIAN_THEME_DIR` to a theme directory. It verifies in-column editing and undo, compares native preview markup and computed prose styles at equal widths, checks light/dark and live theme changes, and exercises preview checkbox edits. The test copies only the built plugin and optional theme into its fixture; it does not operate on existing vault windows. Native preview integration is guarded: incompatible hosts retain a static read-only preview while in-column editing remains available.
+`npm run test:obsidian` additionally tests the installed desktop app in an isolated temporary vault. Set `OBSIDIAN_EXECUTABLE` to its executable, optionally `OBSIDIAN_ASAR` to the installed update package and `OBSIDIAN_THEME_DIR` to a theme directory. It verifies in-column editing and undo, external file changes and conflict recovery, compares native preview markup and computed prose styles at equal widths, checks light/dark and live theme changes, and exercises preview checkbox edits. The test copies only the built plugin and optional theme into its fixture; it does not operate on existing vault windows. Native preview integration is guarded: incompatible hosts retain a static read-only preview while in-column editing remains available.
 
 ## License
 
