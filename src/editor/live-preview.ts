@@ -1,6 +1,7 @@
 import {
 	EditorState,
 	Extension,
+	Facet,
 	MapMode,
 	Prec,
 	Range,
@@ -13,14 +14,15 @@ import {
 	DecorationSet,
 	EditorView,
 	keymap,
+	layer,
 	PluginValue,
+	RectangleMarker,
 	ViewPlugin,
 	ViewUpdate,
 	WidgetType,
 } from '@codemirror/view';
 import {
 	Component,
-	Editor,
 	editorInfoField,
 	editorLivePreviewField,
 	MarkdownFileInfo,
@@ -28,7 +30,6 @@ import {
 	setIcon,
 } from 'obsidian';
 import { visibleColumnWidths } from '../core/column-ratios';
-import { resolveCurrentBlock } from '../core/block-resolution';
 import {
 	normalizeLabel,
 	ParsedNote,
@@ -58,7 +59,6 @@ import {
 	NativeEditingTarget as EditingTarget,
 } from './native-editing';
 import { blockSpan } from './ranges';
-import { NativeFrameRange, NativeFrames } from './native-frame';
 import { ColumnEditor, columnEditorOwner, columnTransaction } from './column-editor';
 import { isolateNativeHistory } from './history';
 
@@ -85,15 +85,55 @@ const refreshField = StateField.define<number>({
 	},
 });
 const editorViews = new Set<EditorView>();
-const externalReconcilers = new Map<Editor, (source: string) => void>();
 const activationCoords = new WeakMap<EditorView, { x: number; y: number }>();
 
-/** Replace a stale pane document without tearing down its active column editor. */
-export function reconcileLivePreviewEditor(editor: Editor, source: string): boolean {
-	const reconcile = externalReconcilers.get(editor);
-	if (!reconcile) return false;
-	reconcile(source);
-	return true;
+const hostFacet = Facet.define<SectionVariantsHost, SectionVariantsHost | undefined>({
+	combine: (values) => values[0],
+});
+
+/**
+ * One parse per document version. Filters, decorations and editing targets
+ * all read this instead of serializing and parsing the note again.
+ */
+const parsedField = StateField.define<ParsedNote>({
+	create: (state) => parseState(state),
+	update(parsed, transaction) {
+		// A refresh can follow an alias change, which changes what parses.
+		return transaction.docChanged ||
+			transaction.effects.some((effect) => effect.is(refreshEffect))
+			? parseState(transaction.state)
+			: parsed;
+	},
+});
+
+function parseState(state: EditorState): ParsedNote {
+	return state.facet(hostFacet)!.parse(state.doc.toString());
+}
+
+/**
+ * Last rendered height per widget, so CodeMirror reserves the right space for
+ * blocks outside the viewport instead of estimating one line and jumping.
+ */
+const widgetHeights = new Map<string, number>();
+const WIDGET_HEIGHT_LIMIT = 500;
+
+function rememberWidgetHeight(key: string, height: number): void {
+	widgetHeights.delete(key);
+	widgetHeights.set(key, height);
+	while (widgetHeights.size > WIDGET_HEIGHT_LIMIT) {
+		const oldest = widgetHeights.keys().next().value;
+		if (oldest === undefined) break;
+		widgetHeights.delete(oldest);
+	}
+}
+
+/** Keyboard, paste, cut and drag edits. Other origins are never blocked. */
+function isGuardedUserEdit(transaction: Transaction): boolean {
+	return (
+		transaction.isUserEvent('input') ||
+		transaction.isUserEvent('delete') ||
+		transaction.isUserEvent('move')
+	);
 }
 
 /** Ask live-preview editors to rebuild, optionally for one note only. */
@@ -154,7 +194,7 @@ export function createLivePreviewExtension(
 	interface VariantDecorations {
 		deco: DecorationSet;
 		atomic: DecorationSet;
-		frames: NativeFrameRange[];
+		frames: FrameRange[];
 	}
 	const decorationsField = StateField.define<VariantDecorations>({
 		create(state) {
@@ -193,8 +233,49 @@ export function createLivePreviewExtension(
 		],
 	});
 
+	/*
+	 * Borders around Toggle blocks. A CodeMirror layer is positioned during the
+	 * editor's own measure cycle and scrolls with the content, so it cannot lag
+	 * behind the text or move lines.
+	 */
+	const frameLayer = layer({
+		above: false,
+		class: 'section-variants-native-frames',
+		update: (update) =>
+			update.docChanged ||
+			update.viewportChanged ||
+			update.geometryChanged ||
+			update.startState.field(decorationsField) !==
+				update.state.field(decorationsField),
+		markers(view) {
+			const frames = view.state.field(decorationsField).frames;
+			if (!frames.length) return [];
+			const scroller = view.scrollDOM.getBoundingClientRect();
+			const baseLeft = scroller.left - view.scrollDOM.scrollLeft * view.scaleX;
+			const baseTop = scroller.top - view.scrollDOM.scrollTop * view.scaleY;
+			const content = view.contentDOM.getBoundingClientRect();
+			const style = view.dom.ownerDocument.defaultView!.getComputedStyle(view.contentDOM);
+			const paddingLeft = parseFloat(style.paddingLeft) * view.scaleX;
+			const paddingRight = parseFloat(style.paddingRight) * view.scaleX;
+			const outset = 8 * view.scaleX;
+			const markers: RectangleMarker[] = [];
+			for (const frame of frames) {
+				if (frame.to < view.viewport.from || frame.from > view.viewport.to) continue;
+				const top = view.documentTop + view.lineBlockAt(frame.from).top * view.scaleY;
+				const bottom = view.documentTop + view.lineBlockAt(frame.to).bottom * view.scaleY;
+				markers.push(new RectangleMarker(
+					'section-variants-native-frame',
+					content.left + paddingLeft - outset - baseLeft,
+					top - baseTop,
+					content.width - paddingLeft - paddingRight + outset * 2,
+					bottom - top,
+				));
+			}
+			return markers;
+		},
+	});
+
 	class SectionVariantsViewPlugin implements PluginValue {
-		private frames?: NativeFrames;
 		private column?: ColumnEditor;
 		private columnPanel?: HTMLElement;
 		private columnLabel?: string;
@@ -214,26 +295,7 @@ export function createLivePreviewExtension(
 			const owner: MarkdownFileInfo & { getViewType?: () => string } = view.state.field(editorInfoField);
 			if (!(columnEditorOwner in owner) && owner.getViewType?.() === 'markdown') {
 				editorViews.add(view);
-				externalReconcilers.set(owner.editor!, (source) => {
-					const previous = view.state.doc.toString();
-					if (previous === source) return;
-					const target = view.state.field(editingField);
-					const oldBlock = target && host.parse(previous).blocks.find(block => block.opening.from === target.blockFrom);
-					const newBlock = oldBlock && resolveCurrentBlock(oldBlock, host.parse(source).blocks);
-					const variant = newBlock?.variants.find(candidate => candidate.normalizedLabel === normalizeLabel(target?.label ?? ''));
-					const anchor = variant?.content.from;
-					let from = 0;
-					while (from < previous.length && from < source.length && previous[from] === source[from]) from++;
-					let suffix = 0;
-					while (suffix < previous.length - from && suffix < source.length - from && previous[previous.length - suffix - 1] === source[source.length - suffix - 1]) suffix++;
-					view.dispatch({
-						changes: { from, to: previous.length - suffix, insert: source.slice(from, source.length - suffix) },
-						...(anchor === undefined ? {} : { selection: { anchor } }),
-						annotations: Transaction.addToHistory.of(false),
-					});
-				});
 			}
-			this.frames = new NativeFrames(view, () => view.state.field(decorationsField).frames);
 			this.ownerDocument.addEventListener(
 				'pointerdown',
 				this.handlePointerDown,
@@ -247,7 +309,6 @@ export function createLivePreviewExtension(
 		}
 
 		update(update: ViewUpdate): void {
-			this.frames?.update(update);
 			this.refreshColumn ||= update.transactions.some(tr => tr.effects.some(effect => effect.is(refreshEffect)));
 			this.scheduleColumnSync();
 		}
@@ -313,7 +374,6 @@ export function createLivePreviewExtension(
 		destroy(): void {
 			this.destroyed = true;
 			this.closeColumn();
-			this.frames?.destroy();
 			this.ownerDocument.removeEventListener(
 				'pointerdown',
 				this.handlePointerDown,
@@ -325,8 +385,6 @@ export function createLivePreviewExtension(
 			this.ownerDocument.removeEventListener('pointercancel', this.handlePointerCancel, true);
 			this.ownerDocument.removeEventListener('click', this.handleClick, true);
 			editorViews.delete(this.view);
-			const editor = this.view.state.field(editorInfoField, false)?.editor;
-			if (editor) externalReconcilers.delete(editor);
 		}
 
 		private readonly handlePointerDown = (event: PointerEvent): void => {
@@ -441,44 +499,38 @@ export function createLivePreviewExtension(
 	}
 
 	return [
+		hostFacet.of(host),
+		parsedField,
 		refreshField,
 		editingField,
+		EditorState.transactionExtender.of((transaction) =>
+			// Obsidian loads external file changes as undoable `set` edits. Keep
+			// one as its own undo step so undoing text typed right after it
+			// never also reverts the other program's change.
+			transaction.docChanged &&
+			transaction.isUserEvent('set') &&
+			transaction.startState.field(parsedField).roots.length
+				? { annotations: isolateNativeHistory.of('full') }
+				: null,
+		),
 		EditorState.transactionFilter.of((transaction) => {
-			if (!transaction.docChanged || !transaction.isUserEvent('input')) return transaction;
-			const start = transaction.startState;
-			if (!start.field(editorLivePreviewField, false)) return transaction;
-			const path = start.field(editorInfoField, false)?.file?.path;
-			if (!path) return transaction;
-			const source = start.doc.toString();
-			const spans = collectEditableSpans(host, path, source, host.parse(source).roots, start.field(editingField));
-			const separators: { from: number; insert: string }[] = [];
-			transaction.changes.iterChanges((from, to, _newFrom, newTo, inserted) => {
-				if (from !== to || !inserted.length || inserted.sliceString(inserted.length - 1) === '\n') return;
-				if (spans.some((span) => span.requiresTrailingLineBreak && span.from === from)) {
-					separators.push({ from: newTo, insert: '\n' });
-				}
-			});
-			return separators.length
-				? [transaction, { changes: separators, sequential: true, selection: transaction.newSelection }]
-				: transaction;
-		}),
-		EditorState.transactionFilter.of((transaction) => {
-			if (!transaction.docChanged) return transaction;
-			if (transaction.annotation(Transaction.userEvent) === undefined || transaction.annotation(Transaction.userEvent) === STRUCTURAL_TRANSACTION_ORIGIN) {
+			// Obsidian loads external file changes with a `set` transaction, and
+			// other plugins and commands use their own origins. Only direct user
+			// edits can land inside hidden syntax, so only those are checked.
+			if (!transaction.docChanged || !isGuardedUserEdit(transaction)) {
 				return transaction;
 			}
 			if (!transaction.startState.field(editorLivePreviewField, false)) {
 				return transaction;
 			}
-			const info = transaction.startState.field(editorInfoField, false);
-			const path = info?.file?.path;
+			const path = transaction.startState.field(editorInfoField, false)?.file?.path;
 			if (!path) return transaction;
-			const source = transaction.startState.doc.toString();
-			const parsed = host.parse(source);
+			const parsed = transaction.startState.field(parsedField);
+			if (!parsed.roots.length) return transaction;
 			const spans = collectEditableSpans(
 				host,
 				path,
-				source,
+				parsed.source,
 				parsed.roots,
 				transaction.startState.field(editingField),
 			);
@@ -501,6 +553,7 @@ export function createLivePreviewExtension(
 			return changesRespectVariantBoundaries(parsed, spans, changes) ? transaction : [];
 		}),
 		decorationsField,
+		frameLayer,
 		ViewPlugin.fromClass(SectionVariantsViewPlugin),
 		Prec.high(
 			keymap.of([
@@ -529,28 +582,35 @@ export function createLivePreviewExtension(
 	];
 }
 
+interface FrameRange {
+	from: number;
+	to: number;
+}
+
 function buildDecorations(
 	host: SectionVariantsHost,
 	state: EditorState,
 	target: EditingTarget | null,
-): { deco: DecorationSet; atomic: DecorationSet; frames: NativeFrameRange[] } {
+): { deco: DecorationSet; atomic: DecorationSet; frames: FrameRange[] } {
 	if (!state.field(editorLivePreviewField, false)) {
 		return { deco: Decoration.none, atomic: Decoration.none, frames: [] };
 	}
 	const path = state.field(editorInfoField, false)?.file?.path;
 	if (!path) return { deco: Decoration.none, atomic: Decoration.none, frames: [] };
-	const source = state.doc.toString();
-	const parsed = host.parse(source);
+	const parsed = state.field(parsedField);
+	if (!parsed.roots.length) {
+		return { deco: Decoration.none, atomic: Decoration.none, frames: [] };
+	}
 	const ranges: Range<Decoration>[] = [];
 	const atomicRanges: Range<Decoration>[] = [];
-	const frames: NativeFrameRange[] = [];
+	const frames: FrameRange[] = [];
 	for (const block of parsed.roots) {
 		if (!block.valid || !block.closing) continue;
 		decorateBlock(
 			host,
 			state.doc,
 			path,
-			source,
+			parsed.source,
 			block,
 			target,
 			ranges,
@@ -574,7 +634,7 @@ function decorateBlock(
 	target: EditingTarget | null,
 	ranges: Range<Decoration>[],
 	atomicRanges: Range<Decoration>[],
-	frames: NativeFrameRange[],
+	frames: FrameRange[],
 ): void {
 	if (!block.closing) return;
 	const state = host.store.resolve(path, block);
@@ -592,11 +652,15 @@ function decorateBlock(
 	}
 
 	const activeVariant = block.variants.find(
-					(variant) =>
-						variant.normalizedLabel === normalizeLabel(state.selectedLabel),
-				);
+		(variant) =>
+			variant.normalizedLabel === normalizeLabel(state.selectedLabel),
+	);
 	if (!activeVariant?.closing) return;
-	frames.push({ from: block.opening.from, to: block.closing.to });
+	// Both hidden ranges cover complete lines, so CodeMirror's height map holds
+	// only real lines and block widgets: no collapsed or zero-height lines.
+	const header = blockSpan(doc, block.opening.from, activeVariant.opening.from);
+	const footer = blockSpan(doc, activeVariant.closing.from, block.closing.from);
+	frames.push({ from: header.from, to: footer.to });
 	addAtomicReplacement(
 		ranges,
 		atomicRanges,
@@ -610,14 +674,16 @@ function decorateBlock(
 				'toolbar',
 				activeVariant.label,
 			),
-		}).range(block.opening.from, activeVariant.content.from),
+		}).range(header.from, header.to),
 	);
-	addAtomicReplacement(ranges, atomicRanges,
-		Decoration.replace({ widget: new NativeEndWidget(block.opening.from) }).range(activeVariant.content.to, block.closing.to),
+	addAtomicReplacement(
+		ranges,
+		atomicRanges,
+		Decoration.replace({
+			block: true,
+			widget: new NativeEndWidget(block.opening.from),
+		}).range(footer.from, footer.to),
 	);
-	if (activeVariant.content.from !== activeVariant.content.to) {
-		ranges.push(Decoration.line({ class: 'section-variants-native-boundary-line' }).range(doc.lineAt(activeVariant.content.to).from));
-	}
 	for (const child of activeVariant.children) {
 		if (!child.valid || !child.closing) continue;
 		decorateBlock(host, doc, path, source, child, target, ranges, atomicRanges, frames);
@@ -627,8 +693,9 @@ function decorateBlock(
 class NativeEndWidget extends WidgetType {
 	constructor(private readonly blockFrom: number) { super(); }
 	eq(other: NativeEndWidget): boolean { return other.blockFrom === this.blockFrom; }
+	get estimatedHeight(): number { return 12; }
 	toDOM(view: EditorView): HTMLElement {
-		const end = view.dom.ownerDocument.createElement('span');
+		const end = createOwnerDocumentDiv(view.dom);
 		end.className = 'section-variants-native-end';
 		end.dataset.blockFrom = String(this.blockFrom);
 		end.setAttribute('aria-hidden', 'true');
@@ -679,7 +746,7 @@ function resolveEditingTarget(
 ): ResolvedEditingTarget | undefined {
 	const path = state.field(editorInfoField, false)?.file?.path;
 	if (!path) return undefined;
-	const parsed = host.parse(state.doc.toString());
+	const parsed = state.field(parsedField);
 	const block = parsed.blocks.find(
 		(candidate) =>
 			candidate.valid &&
@@ -739,6 +806,7 @@ interface LiveWidgetResources {
 	panels: Map<string, HTMLElement>;
 	component: Component;
 	columnObserver?: ResizeObserver;
+	heightObserver: ResizeObserver;
 	headers: Map<string, VariantHeaderHandle>;
 	nestedRenderers: VariantBlockRenderer[];
 	uiSignature: string;
@@ -774,7 +842,16 @@ class LiveBlockWidget extends WidgetType {
 			[...state.hiddenLabels].sort().join(','),
 			block.variants.map((variant) => variant.label).join('\u0001'),
 			editingLabel ?? '',
+			String(this.activeVariantIsEmpty()),
 		].join('\u0000');
+	}
+
+	private get heightKey(): string {
+		return `${this.path}\u0000${this.block.identityKey}\u0000${this.mode}`;
+	}
+
+	get estimatedHeight(): number {
+		return widgetHeights.get(this.heightKey) ?? -1;
 	}
 
 	eq(): boolean {
@@ -782,8 +859,46 @@ class LiveBlockWidget extends WidgetType {
 		return false;
 	}
 
+	private activeVariantIsEmpty(): boolean {
+		if (this.mode !== 'toolbar') return false;
+		const variant = this.block.variants.find(
+			(candidate) => candidate.normalizedLabel === normalizeLabel(this.editingLabel ?? ''),
+		);
+		return Boolean(variant && variant.content.from === variant.content.to);
+	}
+
 	toDOM(view: EditorView): HTMLElement {
 		const root = createOwnerDocumentDiv(view.dom);
+		const heightKey = this.heightKey;
+		// A rebuilt block renders its previews asynchronously. Hold its last
+		// height until they arrive so the lines below it do not jump up and back.
+		const previousHeight = widgetHeights.get(heightKey);
+		let holding = this.mode === 'columns' && previousHeight !== undefined;
+		if (holding) root.style.minHeight = `${previousHeight}px`;
+		const release = (): void => {
+			if (!holding) return;
+			holding = false;
+			root.style.removeProperty('min-height');
+		};
+		if (holding) window.setTimeout(release, 400);
+		const ownerWindow = view.dom.ownerDocument.defaultView ?? window;
+		const heightObserver = new ownerWindow.ResizeObserver(() => {
+			if (!root.isConnected) return;
+			if (holding) {
+				const padding = ownerWindow.getComputedStyle(root);
+				const natural = Array.from(root.children).reduce(
+					(total, child) => total + (child as HTMLElement).offsetHeight,
+					parseFloat(padding.paddingTop) + parseFloat(padding.paddingBottom),
+				);
+				if (natural + 1 >= (previousHeight ?? 0)) release();
+				else return;
+			}
+			rememberWidgetHeight(heightKey, root.getBoundingClientRect().height / view.scaleY);
+			// CodeMirror does not observe widget content. Without this, its
+			// height map stays stale until the next scroll, which then jumps.
+			view.requestMeasure();
+		});
+		heightObserver.observe(root);
 		root.addClass(
 			'section-variants-root',
 			'section-variants-live-widget',
@@ -800,6 +915,7 @@ class LiveBlockWidget extends WidgetType {
 			controls,
 			panels: new Map(),
 			component,
+			heightObserver,
 			headers: new Map(),
 			nestedRenderers: [],
 			uiSignature: this.uiSignature,
@@ -816,6 +932,7 @@ class LiveBlockWidget extends WidgetType {
 					text: this.block.attributes.name,
 				});
 			}
+			if (this.activeVariantIsEmpty()) this.renderEmptyVariant(root, view);
 			return root;
 		}
 
@@ -951,8 +1068,34 @@ class LiveBlockWidget extends WidgetType {
 		return true;
 	}
 
+	/** An empty Toggle variant has no line to click, so offer one. */
+	private renderEmptyVariant(root: HTMLElement, view: EditorView): void {
+		const label = this.editingLabel ?? '';
+		const button = root.createEl('button', {
+			cls: 'section-variants-empty-variant',
+			type: 'button',
+			text: `Write in ${label}`,
+		});
+		button.addEventListener('click', (event) => {
+			event.preventDefault();
+			const block = liveWidgetResources.get(root)?.widget.block ?? this.block;
+			const variant = block.variants.find(
+				(candidate) => candidate.normalizedLabel === normalizeLabel(label),
+			);
+			if (!variant || variant.content.from !== variant.content.to || view.state.readOnly) return;
+			const lineBreak = view.state.doc.sliceString(variant.opening.to, variant.opening.to + 2) === '\r\n' ? '\r\n' : '\n';
+			view.dispatch({
+				changes: { from: variant.content.from, insert: lineBreak },
+				selection: { anchor: variant.content.from },
+				userEvent: STRUCTURAL_TRANSACTION_ORIGIN,
+			});
+			view.focus();
+		});
+	}
+
 	destroy(dom: HTMLElement): void {
 		const resources = liveWidgetResources.get(dom);
+		resources?.heightObserver.disconnect();
 		resources?.columnObserver?.disconnect();
 		resources?.component.unload();
 		liveWidgetResources.delete(dom);

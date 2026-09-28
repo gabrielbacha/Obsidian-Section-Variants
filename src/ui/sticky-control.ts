@@ -17,6 +17,8 @@ interface StickyControlResource {
 	control: HTMLElement;
 	observer: ResizeObserver;
 	statusBar?: HTMLElement;
+	/** Inputs of the last render; typing elsewhere in the note leaves it equal. */
+	signature?: string;
 }
 
 const SHOW_NOTE_CONTROL_COMMAND = 'Show note control';
@@ -76,13 +78,33 @@ export class StickyControlManager {
 		}
 		this.observeLayout(view, resource);
 		const { control } = resource;
+		const states = new Map(
+			blocks.map((block) => [block, this.host.store.resolve(path, block)]),
+		);
+		const signature = JSON.stringify([
+			blocks.map((block) => {
+				const state = states.get(block);
+				return [
+					block.identityKey,
+					block.variants.map((variant) => variant.label),
+					state?.selectedLabel,
+					state?.view,
+					state?.responsive,
+					state?.differsFromAuthored,
+					[...(state?.hiddenLabels ?? [])].sort(),
+					this.host.store.isFollowingGlobalState(path, block),
+				];
+			}),
+			this.host.store.getNote(path) ?? null,
+		]);
+		if (resource.signature === signature) return;
+		resource.signature = signature;
+		// Actions parse at click time, so a skipped render never holds stale offsets.
+		const current = () => this.host.parse(view.editor.getValue());
 		control.empty();
 		control.setAttribute('role', 'toolbar');
 		control.setAttribute('aria-label', 'Note-wide section variants');
 
-		const states = new Map(
-			blocks.map((block) => [block, this.host.store.resolve(path, block)]),
-		);
 		const currentLabels = new Set(
 			blocks.map((block) =>
 				normalizeLabel(states.get(block)?.selectedLabel ?? ''),
@@ -160,7 +182,7 @@ export class StickyControlManager {
 				if (columnsMode) {
 					const result = this.host.store.toggleColumnAcrossNote(
 						path,
-						parsed,
+						current(),
 						label,
 					);
 					new Notice(
@@ -168,7 +190,7 @@ export class StickyControlManager {
 					);
 					return;
 				}
-				const result = this.host.store.applyLabelAcrossNote(path, parsed, label);
+				const result = this.host.store.applyLabelAcrossNote(path, current(), label);
 				new Notice(
 					`Applied to ${result.applied} block${result.applied === 1 ? '' : 's'}, skipped ${result.skipped}.`,
 				);
@@ -192,7 +214,7 @@ export class StickyControlManager {
 			setIcon(toggleAll, hasHiddenColumn ? 'eye' : 'eye-off');
 			setTooltip(toggleAll, action);
 			toggleAll.addEventListener('click', () => {
-				this.host.store.toggleAllColumnsAcrossNote(path, parsed);
+				this.host.store.toggleAllColumnsAcrossNote(path, current());
 			});
 		}
 		createControlDivider(reveal);
@@ -218,7 +240,7 @@ export class StickyControlManager {
 			const following = !allFollowingGlobal;
 			const result = this.host.store.setGlobalFollowingAcrossNote(
 				path,
-				parsed,
+				current(),
 				following,
 			);
 			new Notice(
@@ -248,7 +270,7 @@ export class StickyControlManager {
 			value: globalView,
 			options: VIEW_MODE_SEGMENTS,
 			onSelect: (viewMode) => {
-				this.host.store.applyViewAcrossNote(path, parsed, viewMode);
+				this.host.store.applyViewAcrossNote(path, current(), viewMode);
 			},
 		});
 		createVariantMarker(control, {

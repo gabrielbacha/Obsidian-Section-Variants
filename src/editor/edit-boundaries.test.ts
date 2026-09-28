@@ -36,6 +36,21 @@ describe('inline editor prose islands', () => {
 		]);
 	});
 
+	it('rejects user text typed into an empty variant, which would join its closing fence', () => {
+		const parsed = parseNote(
+			[':::: variants', '::: A', ':::', '::: B', 'Beta', ':::', '::::'].join('\n'),
+		);
+		const variant = parsed.blocks[0]?.variants[0];
+		if (!variant) throw new Error('Missing empty variant fixture');
+		const spans = editableSpansForVariant(variant, parsed.source);
+
+		expect(
+			changesRespectVariantBoundaries(parsed, spans, [
+				{ from: variant.content.from, to: variant.content.from, inserted: 'x' },
+			]),
+		).toBe(false);
+	});
+
 	it('cuts a nested variants block out of its parent prose editors', () => {
 		const parsed = parseNote(NESTED_SOURCE);
 		const parent = parsed.roots[0]?.variants[0];

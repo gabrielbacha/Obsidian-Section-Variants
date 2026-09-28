@@ -6,7 +6,7 @@ Run the automated release gate first:
 npm run check
 ```
 
-Also run `npm run test:obsidian` with `OBSIDIAN_EXECUTABLE`, optionally `OBSIDIAN_ASAR` and `OBSIDIAN_THEME_DIR`, after building. Browser tests use a host-contract double; they cannot establish actual Obsidian theme parity. The isolated desktop test compares native DOM and computed styles, tight-list item distances, and callout title-to-content gaps, including theme changes without reopening. It preserves Obsidian's own Live Preview callout outer-margin rule rather than adding a plugin override. Mobile, pop-out windows, and IME still require device/manual checks.
+Also run `npm run test:stability` (optionally with `SECTION_VARIANTS_PLUGINS_DIR`) and `npm run test:obsidian` with `OBSIDIAN_EXECUTABLE`, optionally `OBSIDIAN_ASAR` and `OBSIDIAN_THEME_DIR`, after building. Browser tests use a host-contract double; they cannot establish actual Obsidian theme parity. The isolated desktop test compares native DOM and computed styles, tight-list item distances, and callout title-to-content gaps, including theme changes without reopening. It preserves Obsidian's own Live Preview callout outer-margin rule rather than adding a plugin override. Mobile, pop-out windows, and IME still require device/manual checks.
 
 For manual testing, reload Obsidian after building and create a note containing:
 

@@ -1,65 +1,16 @@
 // Opt-in integration test against an installed Obsidian, in an isolated vault.
 // Never opens, modifies, or closes the user's existing vault/window.
-import { chromium } from '@playwright/test';
-import { mkdtemp, mkdir, writeFile, copyFile, readFile, readdir } from 'node:fs/promises';
-import { spawn } from 'node:child_process';
-import { once } from 'node:events';
-import { tmpdir } from 'node:os';
+import { readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { launchObsidian } from './obsidian-harness.mjs';
 import { verifyNativePreviews } from './obsidian-preview-checks.mjs';
 
-const executable = process.env.OBSIDIAN_EXECUTABLE;
-if (!executable) throw new Error('Set OBSIDIAN_EXECUTABLE to the installed Obsidian executable.');
-const directory = await mkdtemp(path.join(tmpdir(), 'section-variants-runtime-'));
-const profile = path.join(directory, 'profile');
-const vault = path.join(directory, 'vault');
-const plugin = path.join(vault, '.obsidian/plugins/section-variants');
-await mkdir(profile, { recursive: true });
-await mkdir(plugin, { recursive: true });
-for (const name of ['main.js', 'manifest.json', 'styles.css']) await copyFile(name, path.join(plugin, name));
-if (process.env.OBSIDIAN_ASAR) await copyFile(process.env.OBSIDIAN_ASAR, path.join(profile, path.basename(process.env.OBSIDIAN_ASAR)));
-await writeFile(path.join(profile, 'obsidian.json'), JSON.stringify({ updateDisabled: true, vaults: { '0123456789abcdef': { path: vault, ts: Date.now(), open: true } } }));
-await writeFile(path.join(vault, '.obsidian/app.json'), JSON.stringify({ livePreview: true }));
-await writeFile(path.join(vault, '.obsidian/community-plugins.json'), JSON.stringify(['section-variants']));
-if (process.env.OBSIDIAN_THEME_DIR) {
-	const name = path.basename(process.env.OBSIDIAN_THEME_DIR);
-	const theme = path.join(vault, '.obsidian/themes', name);
-	await mkdir(theme, { recursive: true });
-	for (const file of ['theme.css', 'manifest.json']) await copyFile(path.join(process.env.OBSIDIAN_THEME_DIR, file), path.join(theme, file));
-	await writeFile(path.join(vault, '.obsidian/appearance.json'), JSON.stringify({ cssTheme: name, accentColor: '#440acd', baseFontSize: 16 }));
-}
 const source = '# Runtime verification\n\n:::: {.variants #runtime view="columns" responsive="scroll"}\n::: First\nAlpha original.\n:::\n::: Second\n### Heading\n\nBeta comparison with **bold**.\n:::\n::::\n\nOutside.\n';
-await writeFile(path.join(vault, 'Verification.md'), source);
-console.log('Disposable test vault:', vault);
-const application = spawn(executable, [`--user-data-dir=${profile}`, '--remote-debugging-port=0'], { stdio: 'pipe' });
-application.stderr.on('data', data => { if (data.toString().includes('DevTools listening')) console.log(data.toString().trim()); });
-let browser;
+const { page, vault, directory, close } = await launchObsidian({ files: { 'Verification.md': source } });
+const conflictFolderEntries = async () => readdir(path.join(vault, 'Section Variants Conflicts')).catch(() => []);
 try {
-	let port;
-	for (let attempt = 0; attempt < 100; attempt++) {
-		try { port = (await readFile(path.join(profile, 'DevToolsActivePort'), 'utf8')).split('\n')[0]; break; } catch {}
-		await new Promise(resolve => setTimeout(resolve, 100));
-	}
-	if (!port) throw new Error('Isolated Obsidian did not expose its test debugging port.');
-	browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
-	const context = browser.contexts()[0];
-	const page = context.pages()[0] ?? await context.waitForEvent('page', { timeout: 20000 });
-	console.log('Window:', page.url(), await page.title());
-	page.setDefaultTimeout(15000);
-	// Quitting the disposable app can race Electron's before-unload dialog.
-	// Handle that explicitly instead of Playwright's automatic dialog handler.
-	page.on('dialog', dialog => { void dialog.accept().catch(() => {}); });
-	page.on('pageerror', error => console.error('Renderer error:', error.message));
-	page.on('console', message => { if (message.type() === 'error') console.error('Console:', message.text()); });
-	await page.screenshot({ path: path.join(directory, 'startup.png') });
-	const trust = page.getByRole('button', { name: 'Trust author and enable plugins', exact: true });
-	await trust.waitFor({ state: 'visible' });
-	await trust.click();
-	await page.waitForFunction(() => window.app?.workspace?.layoutReady, undefined, { timeout: 20000 });
 	await page.evaluate(async () => {
 		app.vault.setConfig('showLineNumber', true);
-		await app.plugins.setEnable(true);
-		if (!app.plugins.plugins['section-variants']) await app.plugins.enablePlugin('section-variants');
 		await app.workspace.getLeaf().openFile(app.vault.getAbstractFileByPath('Verification.md'));
 		await app.workspace.getLeaf().setViewState({ type: 'markdown', state: { file: 'Verification.md', mode: 'source', source: false } });
 	});
@@ -111,7 +62,9 @@ try {
 	const edited = await page.evaluate(() => app.workspace.getLeavesOfType('markdown').find(leaf => leaf.view.file?.path === 'Verification.md').view.editor.getValue());
 	if (!edited.includes('CHECK') || !edited.includes('Beta comparison')) throw new Error('Typing did not update the note safely.');
 	await page.keyboard.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z');
-	await page.waitForFunction(original => app.workspace.getLeavesOfType('markdown').find(leaf => leaf.view.file?.path === 'Verification.md').view.editor.getValue() === original, external);
+	await page.waitForFunction(original => app.workspace.getLeavesOfType('markdown').find(leaf => leaf.view.file?.path === 'Verification.md').view.editor.getValue() === original, external).catch(async error => {
+		throw new Error('Undo did not restore the external version: ' + JSON.stringify(await page.evaluate(() => app.workspace.getLeavesOfType('markdown').find(leaf => leaf.view.file?.path === 'Verification.md').view.editor.getValue())), { cause: error });
+	});
 	await page.evaluate(async () => { await app.workspace.getLeavesOfType('markdown').find(leaf => leaf.view.file?.path === 'Verification.md').view.save(); });
 	const diskAfterSave = await readFile(path.join(vault, 'Verification.md'), 'utf8');
 	if (diskAfterSave !== external) throw new Error('A save restored stale note content after external edit.');
@@ -146,20 +99,26 @@ try {
 	const conflictExternal = beforeConflict.replace('Alpha changed while idle', 'Alpha changed again by agent');
 	await writeFile(path.join(vault, 'Verification.md'), conflictExternal);
 	await page.evaluate(() => app.vault.trigger('modify', app.vault.getFileByPath('Verification.md')));
-	await page.waitForFunction(expected => app.workspace.getLeavesOfType('markdown').find(leaf => leaf.view.file?.path === 'Verification.md').view.editor.getValue() === expected, conflictExternal);
+	// Obsidian owns this case. It must behave exactly as for an ordinary note:
+	// its merge keeps the unsaved local line and applies the external change.
+	await page.waitForFunction(() => {
+		const value = app.workspace.getLeavesOfType('markdown').find(leaf => leaf.view.file?.path === 'Verification.md').view.editor.getValue();
+		return value.includes('LOCAL UNSAVED') && value.includes('Alpha changed again by agent');
+	});
 	await page.evaluate(() => { const view = app.workspace.getLeavesOfType('markdown').find(leaf => leaf.view.file?.path === 'Verification.md').view; view.save = window.originalConflictSave; });
-	const conflictCopies = await readdir(path.join(vault, 'Section Variants Conflicts'));
-	if (conflictCopies.length !== 1 || !(await readFile(path.join(vault, 'Section Variants Conflicts', conflictCopies[0]), 'utf8')).includes('LOCAL UNSAVED')) throw new Error('Unsaved local version was not preserved.');
-	await page.waitForTimeout(700);
-	if (await readFile(path.join(vault, 'Verification.md'), 'utf8') !== conflictExternal) throw new Error('Conflict handling overwrote the external file.');
-	console.log('PASS: external writes replace clean panes; concurrent local edits get a visible recovery copy.');
+	if ((await conflictFolderEntries()).length) throw new Error('Section Variants created a conflict copy instead of leaving the merge to Obsidian.');
+	await page.evaluate(async () => { await app.workspace.getLeavesOfType('markdown').find(leaf => leaf.view.file?.path === 'Verification.md').view.save(); });
+	const merged = await readFile(path.join(vault, 'Verification.md'), 'utf8');
+	if (!merged.includes('LOCAL UNSAVED') || !merged.includes('Alpha changed again by agent')) throw new Error('The merged note was not saved: ' + merged);
+	console.log('PASS: concurrent local and external edits use Obsidian\'s own merge, with no plugin copies.');
+	const splitBase = merged;
 	await page.evaluate(async () => {
 		const file = app.vault.getFileByPath('Verification.md');
 		const leaf = app.workspace.getLeaf('split');
 		await leaf.openFile(file);
 		await leaf.setViewState({ type: 'markdown', state: { file: file.path, mode: 'source', source: false } });
 	});
-	const splitExternal = conflictExternal.replace('Alpha changed again by agent', 'Alpha from a split-pane agent edit');
+	const splitExternal = splitBase.replace('Alpha changed again by agent', 'Alpha from a split-pane agent edit');
 	await writeFile(path.join(vault, 'Verification.md'), splitExternal);
 	await page.waitForFunction(expected => {
 		const views = app.workspace.getLeavesOfType('markdown').filter(leaf => leaf.view.file?.path === 'Verification.md');
@@ -190,18 +149,14 @@ try {
 	await writeFile(path.join(vault, 'Ordinary.md'), ordinaryExternal);
 	await page.evaluate(() => app.vault.trigger('modify', app.vault.getFileByPath('Ordinary.md')));
 	await page.waitForTimeout(500);
-	const ordinaryPluginState = await page.evaluate(() => {
+	const ordinaryState = await page.evaluate(() => {
 		const plugin = app.plugins.plugins['section-variants'];
 		const leaf = app.workspace.getLeavesOfType('markdown').find(leaf => leaf.view.file?.path === 'Ordinary.md');
 		leaf.view.save = window.ordinarySave;
-		return { tracked: plugin.lastDiskSource.has('Ordinary.md'), blocks: plugin.parse(leaf.view.editor.getValue()).blocks.length };
+		return { blocks: plugin.parse(leaf.view.editor.getValue()).blocks.length };
 	});
-	if (ordinaryPluginState.tracked || ordinaryPluginState.blocks || (await readdir(path.join(vault, 'Section Variants Conflicts'))).length !== conflictCopies.length || await readFile(path.join(vault, 'Ordinary.md'), 'utf8') !== ordinaryExternal) throw new Error('Section Variants interfered with an ordinary Markdown note: ' + JSON.stringify(ordinaryPluginState));
-	console.log('PASS: ordinary Markdown notes are outside Section Variants file reconciliation, even with variant syntax inside code fences.');
+	if (ordinaryState.blocks || (await conflictFolderEntries()).length || await readFile(path.join(vault, 'Ordinary.md'), 'utf8') !== ordinaryExternal) throw new Error('Section Variants interfered with an ordinary Markdown note: ' + JSON.stringify(ordinaryState));
+	console.log('PASS: ordinary Markdown notes are outside Section Variants, even with variant syntax inside code fences.');
 } finally {
-	application.kill('SIGTERM');
-	// Only the subprocess created above: never find/terminate a user's app.
-	await Promise.race([once(application, 'exit'), new Promise(resolve => setTimeout(resolve, 2000))]);
-	if (application.exitCode === null && application.signalCode === null) application.kill('SIGKILL');
-	await browser?.close();
+	await close();
 }

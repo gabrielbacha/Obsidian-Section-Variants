@@ -42,6 +42,10 @@ export class ReadingViewCoordinator {
 
 	constructor(private readonly host: SectionVariantsHost) {}
 
+	hasRenderers(path: string): boolean {
+		return Boolean(this.renderers.get(path)?.size);
+	}
+
 	rebind(path: string, source: string): void {
 		const renderers = this.renderers.get(path);
 		if (!renderers) return;

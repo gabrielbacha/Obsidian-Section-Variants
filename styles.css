@@ -500,10 +500,15 @@ body.is-mobile .section-variants-context-menu-input {
 
 /* ------------------------------------------------------------ live preview */
 
+/* CodeMirror measures a block widget by its border box. Vertical margins
+ * would sit outside that box and make its height map wrong, so spacing is
+ * padding, and flow-root stops child margins from escaping. */
 .section-variants-live-widget {
+	display: flow-root;
 	box-sizing: border-box;
 	width: 100%;
-	margin-block: var(--size-2-2);
+	margin-block: 0;
+	padding-block: var(--size-2-2);
 }
 
 .section-variants-native-header {
@@ -549,15 +554,10 @@ body.is-mobile .section-variants-context-menu-input {
 }
 
 .section-variants-native-frames {
-	position: absolute;
-	inset: 0;
-	overflow: hidden;
 	pointer-events: none;
-	z-index: 1;
 }
 
 .section-variants-native-frame {
-	position: absolute;
 	box-sizing: border-box;
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-s);
@@ -565,17 +565,14 @@ body.is-mobile .section-variants-context-menu-input {
 }
 
 .section-variants-native-end {
-	display: inline-block;
-	width: 0;
-	height: var(--size-4-3, 12px);
+	display: block;
+	height: 12px;
 }
 
-/* This line contains only hidden suffix fences, never authored prose. */
-.markdown-source-view.mod-cm6 .cm-line.section-variants-native-boundary-line,
-.cm-line.section-variants-native-boundary-line {
-	padding-block: 0;
-	line-height: 0;
-	font-size: 0;
+button.section-variants-empty-variant {
+	margin-block-start: var(--size-2-2);
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
 }
 
 /* ---------------------------------------------------------- sticky control */
@@ -649,9 +646,14 @@ body.is-mobile .section-variants-context-menu-input {
 			color var(--anim-duration-fast, 140ms) ease;
 	}
 
-	/* Crossfade the variant that comes into view on switch. */
+	/* Crossfade the variant that comes into view on switch. Live Preview
+	 * columns are remounted by the editor, where a fade would read as flicker. */
 	.section-variants-panel:not(.is-inactive, .is-hidden-column) {
 		animation: section-variants-fade-in var(--anim-duration-fast, 140ms) ease;
+	}
+
+	.section-variants-live-widget .section-variants-panel {
+		animation: none;
 	}
 }
 

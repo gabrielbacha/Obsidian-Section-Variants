@@ -3,7 +3,11 @@ import { ParsedNote, VariantSection } from '../core/types';
 export interface EditableSpan {
 	from: number;
 	to: number;
-	/** A truly empty variant needs a newline before ordinary text is safe. */
+	/**
+	 * A truly empty variant has no line of its own: any text typed at this
+	 * offset would join the closing fence. Its first line is created
+	 * structurally (Toggle button or the column editor) instead.
+	 */
 	requiresTrailingLineBreak?: boolean;
 }
 
@@ -118,9 +122,7 @@ export function changesRespectVariantBoundaries(
 
 function changeFitsSpan(change: DocumentChange, span: EditableSpan): boolean {
 	if (change.from < span.from || change.to > span.to) return false;
-	if (!span.requiresTrailingLineBreak) return true;
-	// The transaction filter adds the separating newline to the first input.
-	return change.from === change.to;
+	return !span.requiresTrailingLineBreak;
 }
 
 function changeTouchesRange(
