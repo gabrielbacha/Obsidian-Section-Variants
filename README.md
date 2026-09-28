@@ -93,7 +93,7 @@ Block-specific label, view, and authored narrow-layout choices are stored separa
 
 Inactive Toggle variants are hidden in Live Preview. Columns retain their comparison grid, with an Obsidian-owned editor mounted only for the active column. Its changes and undo/redo are routed through the original note; no cloned editor state or temporary Markdown files are used. The native editor adapter uses an internal Obsidian interface and reports an error without changing the note if that interface is unavailable. Menu-driven structural changes use the open note's editor transaction; closed notes use an atomic vault update. Whole-note and cross-block selections in the outer editor can replace complete variants blocks. Select-all inside a column selects that variant's content. Source Mode exposes individual fences directly.
 
-When another program changes an open note, the disk version is loaded into clean editor panes and active columns. If Obsidian has different unsaved text, Section Variants first saves that local text as a visible note in `Section Variants Conflicts`, then shows the external version. A notice gives the recovery note's path.
+When another program changes an open note containing variants, the disk version is loaded into clean editor panes and active columns. If Obsidian has different unsaved text, Section Variants first saves that local text as a visible note in `Section Variants Conflicts`, then shows the external version. A notice gives the recovery note's path. Notes without variants are left to Obsidian's normal file handling.
 
 Blocks use an explicit Pandoc ID, a following Obsidian block ID, or a structural fingerprint for persistence. If duplicate fingerprints become ambiguous, use **Add stable block ID** or enable automatic IDs.
 

@@ -172,6 +172,32 @@ try {
 	await page.waitForFunction(expected => app.workspace.getLeavesOfType('markdown').filter(leaf => leaf.view.file?.path === 'Verification.md').every(leaf => leaf.view.editor.getValue() === expected), rapidLast);
 	if (await readFile(path.join(vault, 'Verification.md'), 'utf8') !== rapidLast) throw new Error('Rapid external writes were reverted.');
 	console.log('PASS: split panes and rapid external writes converge on the latest disk version.');
+	const removedVariants = '# The agent removed the variants block\n\nNow an ordinary note.\n';
+	await writeFile(path.join(vault, 'Verification.md'), removedVariants);
+	await page.waitForFunction(expected => app.workspace.getLeavesOfType('markdown').filter(leaf => leaf.view.file?.path === 'Verification.md').every(leaf => leaf.view.editor.getValue() === expected), removedVariants);
+	if (await readFile(path.join(vault, 'Verification.md'), 'utf8') !== removedVariants) throw new Error('Removing the last variants block was reverted.');
+	const ordinary = '# Ordinary note\n\nThis has no variants.\n\n```md\n:::: {.variants}\n```\n';
+	await page.evaluate(async source => {
+		const file = await app.vault.create('Ordinary.md', source);
+		const leaf = app.workspace.getLeaf('split');
+		await leaf.openFile(file);
+		await leaf.setViewState({ type: 'markdown', state: { file: file.path, mode: 'source', source: false } });
+		window.ordinarySave = leaf.view.save;
+		leaf.view.save = async () => {};
+		leaf.view.editor.replaceRange('LOCAL UNSAVED\n', { line: 0, ch: 0 });
+	}, ordinary);
+	const ordinaryExternal = ordinary.replace('This has no variants.', 'An agent changed this ordinary note.');
+	await writeFile(path.join(vault, 'Ordinary.md'), ordinaryExternal);
+	await page.evaluate(() => app.vault.trigger('modify', app.vault.getFileByPath('Ordinary.md')));
+	await page.waitForTimeout(500);
+	const ordinaryPluginState = await page.evaluate(() => {
+		const plugin = app.plugins.plugins['section-variants'];
+		const leaf = app.workspace.getLeavesOfType('markdown').find(leaf => leaf.view.file?.path === 'Ordinary.md');
+		leaf.view.save = window.ordinarySave;
+		return { tracked: plugin.lastDiskSource.has('Ordinary.md'), blocks: plugin.parse(leaf.view.editor.getValue()).blocks.length };
+	});
+	if (ordinaryPluginState.tracked || ordinaryPluginState.blocks || (await readdir(path.join(vault, 'Section Variants Conflicts'))).length !== conflictCopies.length || await readFile(path.join(vault, 'Ordinary.md'), 'utf8') !== ordinaryExternal) throw new Error('Section Variants interfered with an ordinary Markdown note: ' + JSON.stringify(ordinaryPluginState));
+	console.log('PASS: ordinary Markdown notes are outside Section Variants file reconciliation, even with variant syntax inside code fences.');
 } finally {
 	application.kill('SIGTERM');
 	// Only the subprocess created above: never find/terminate a user's app.

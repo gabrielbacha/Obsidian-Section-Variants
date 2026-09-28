@@ -568,11 +568,19 @@ export default class SectionVariantsPlugin
 			const source = await this.app.vault.read(file);
 			if (!this.vaultRefreshGenerations.isCurrent(path, generation)) return;
 			const previous = this.lastDiskSource.get(path);
+			const views = this.app.workspace.getLeavesOfType('markdown').map(leaf => leaf.view)
+				.filter((view): view is MarkdownView => view instanceof MarkdownView && view.file?.path === path && view.getMode() === 'source');
+			// This plugin must never reconcile an ordinary Markdown note. Include
+			// previous and open-editor content so deleting the final variants block
+			// externally is still handled once, without dropping local edits.
+			const hasVariants = (text: string): boolean => text.includes(':::') && this.parse(text).blocks.length > 0;
+			if (!hasVariants(source) && !(previous && hasVariants(previous)) && !views.some(view => hasVariants(view.editor.getValue()))) {
+				this.lastDiskSource.delete(path);
+				return;
+			}
 			if (previous !== source || previous === undefined) {
 				const copied = new Set<string>();
-				for (const leaf of this.app.workspace.getLeavesOfType('markdown')) {
-					const view = leaf.view;
-					if (!(view instanceof MarkdownView) || view.file?.path !== path || view.getMode() !== 'source') continue;
+				for (const view of views) {
 					const local = view.editor.getValue();
 					if (local === source) continue;
 					if ((previous === undefined || local !== previous) && !copied.has(local)) {
