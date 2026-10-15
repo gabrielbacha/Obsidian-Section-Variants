@@ -24,3 +24,4 @@ data.json
 # Browser acceptance-test artifacts
 test-results/
 playwright-report/
+.claude/settings.local.json
