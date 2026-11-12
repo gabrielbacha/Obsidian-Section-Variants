@@ -63,6 +63,9 @@ try {
 			if (line?.classList.contains('HyperMD-header-2')) { nativeReady = true; break; }
 			await sleep(20);
 		}
+		// Finish the host's scheduled scrollIntoView measurement before recording
+		// the initial position; subsequent preview rendering must remain anchored.
+		await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
 		const first = lineTop();
 		const samples = [];
 		for (let i = 0; i < 15; i++) { await sleep(100); samples.push(lineTop()); }
