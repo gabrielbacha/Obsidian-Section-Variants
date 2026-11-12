@@ -88,14 +88,18 @@ try {
 			const rect = scroller.getBoundingClientRect();
 			const anchor = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
 				?.closest('.cm-line, .cm-embed-block, .section-variants-live-widget, .section-variants-native-end');
+			const sourcePosition = anchor ? cm.posAtDOM(anchor) : undefined;
+			const sourceText = anchor?.textContent;
+			const sameAnchor = () => {try{return anchor?.isConnected && cm.posAtDOM(anchor)===sourcePosition && anchor.textContent===sourceText;}catch{return false;}};
 			const requested = Math.min(300, scroller.scrollTop);
 			const before = anchor?.getBoundingClientRect().top;
 			scroller.scrollTop -= requested;
 			await frames(); await sleep(60);
-			const scrolled = anchor?.isConnected ? anchor.getBoundingClientRect().top : undefined;
+			// CodeMirror can recycle a connected line node for another source range.
+			const scrolled = sameAnchor() ? anchor.getBoundingClientRect().top : undefined;
 			if (scrolled !== undefined && before !== undefined) scrollErrors.push(Math.abs(scrolled - before - requested));
 			await sleep(500);
-			if (anchor?.isConnected && scrolled !== undefined) settleErrors.push(Math.abs(anchor.getBoundingClientRect().top - scrolled));
+			if (sameAnchor() && scrolled !== undefined) settleErrors.push(Math.abs(anchor.getBoundingClientRect().top - scrolled));
 			// Every rendered line's height-map position must match the DOM.
 			for (const line of cm.contentDOM.querySelectorAll(':scope > .cm-line')) {
 				const pos = cm.posAtDOM(line);
