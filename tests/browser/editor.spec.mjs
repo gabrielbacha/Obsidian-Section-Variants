@@ -10,7 +10,8 @@ test.beforeAll(async () => {
   const result = await build({ entryPoints: ['tests/browser/harness.js'], bundle: true, write: false, format: 'iife', alias: { obsidian: path.resolve('tests/browser/obsidian.js'), '@codemirror/state': path.resolve('node_modules/@codemirror/state/dist/index.js') } });
   bundle = result.outputFiles[0].text;
 });
-test.beforeEach(async ({ page }) => {
+test.beforeEach(async ({ page,context }) => {
+  await context.route('**/*',route=>{const url=new URL(route.request().url());if(['127.0.0.1','localhost'].includes(url.hostname)||['data:','blob:','about:'].includes(url.protocol))return route.continue();return route.abort('blockedbyclient');});
   await page.setContent('<style>:root{--size-2-1:2px;--size-2-2:4px;--size-2-3:6px;--size-4-3:12px;--size-4-4:16px}.test-pane{width:1000px;margin:20px}.cm-content{min-height:200px}p{min-height:24px}</style>');
   await page.addStyleTag({ content: readFileSync('styles.css', 'utf8') });
   await page.addScriptTag({ content: bundle });
@@ -358,4 +359,102 @@ test('editing a nested column inside an active parent reaches the original note'
   await expect(panel(page, 'B').locator('p')).toBeVisible();
   await page.keyboard.press('Escape');
   expect((await snapshot(page)).editingLabels).toEqual(['A']);
+});
+
+for (const kind of ['add','rename','deleteVariant','deleteBox','widths','insert']) test(`async ${kind} dialog submits once while its callback is pending`, async ({page}) => {
+  await page.evaluate(kind=>{
+    const h=window.h,block=h.parseNote(':::: {.variants #one}\n::: A\nOne\n:::\n::: B\nTwo\n:::\n::::').blocks[0];
+    window.dialogCalls=0;const callback=()=>{window.dialogCalls++;return new Promise(resolve=>window.finishDialog=resolve);};
+    const constructors={add:()=>new h.dialogs.AddVariantModal(h.host.app,block,[],callback),rename:()=>new h.dialogs.RenameVariantModal(h.host.app,'A',callback),deleteVariant:()=>new h.dialogs.DeleteVariantConfirmationModal(h.host.app,'A',callback),deleteBox:()=>new h.dialogs.DeleteBlockConfirmationModal(h.host.app,undefined,callback),widths:()=>new h.dialogs.ColumnRatiosModal(h.host.app,block,callback),insert:()=>new h.dialogs.InsertVariantsModal(h.host.app,[],callback)};
+    window.reviewDialog=constructors[kind]();window.reviewDialog.open();const method=kind.startsWith('delete')?'confirm':'submit';window.reviewDialog[method]();window.reviewDialog[method]();
+  },kind);
+  expect(await page.evaluate(()=>window.dialogCalls)).toBe(1);
+  await expect(page.locator('.modal-content')).toHaveAttribute('aria-busy','true');
+  expect(await page.locator('.modal-content button').evaluateAll(items=>items.every(item=>item.disabled))).toBe(true);
+  await page.evaluate(()=>window.finishDialog());
+  await expect(page.locator('.modal-content')).toHaveCount(0);
+  expect(await page.evaluate(()=>window.dialogCalls)).toBe(1);
+});
+
+test('insertion default follows its row through removal and rename',async({page})=>{
+  await page.evaluate(()=>{window.insertedOptions=null;window.reviewDialog=new window.h.dialogs.InsertVariantsModal(window.h.host.app,[],options=>{window.insertedOptions=options;});window.reviewDialog.open();});
+  await page.getByRole('button',{name:'Add variant',exact:true}).click();
+  await page.locator('.modal-content select').first().selectOption('1');
+  await page.locator('[data-name="Variant 1"] button').click();
+  await page.locator('[data-name="Variant 1"] input').fill('Renamed B');
+  await expect(page.locator('.modal-content select').first().locator('option:checked')).toHaveText('Renamed B');
+  await page.getByRole('button',{name:'Insert',exact:true}).click();
+  expect(await page.evaluate(()=>window.insertedOptions.defaultLabel)).toBe('Renamed B');
+});
+
+test('Home and End skip disabled items, and IME confirmation does not submit a box name',async({page})=>{
+  await page.evaluate(()=>{const button=document.body.createEl('button',{text:'Open menu'});button.onclick=event=>window.h.openAttachedMenu(event,[{label:'Disabled',disabled:true},{label:'First'},{label:'Middle'},{label:'Last'},{label:'End disabled',disabled:true}]);button.click();});
+  await page.keyboard.press('End');await expect(page.locator('[role="menuitem"]:focus')).toHaveText('Last');await page.keyboard.press('Home');await expect(page.locator('[role="menuitem"]:focus')).toHaveText('First');
+  await page.evaluate(()=>{window.h.closeAttachedMenus();window.imeCommits=0;const button=document.body.createEl('button',{text:'Name'});button.onclick=event=>window.h.openAttachedMenu(event,[{label:'Name',input:{value:'',ariaLabel:'Box name',onSubmit:()=>window.imeCommits++}}]);button.click();const input=document.querySelector('.section-variants-context-menu input');input.focus();input.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true}));input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',isComposing:true,bubbles:true}));});
+  expect(await page.evaluate(()=>window.imeCommits)).toBe(0);await expect(page.locator('.section-variants-context-menu')).toHaveCount(1);
+  await page.evaluate(()=>{const input=document.querySelector('.section-variants-context-menu input');input.dispatchEvent(new CompositionEvent('compositionend',{bubbles:true}));input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));});expect(await page.evaluate(()=>window.imeCommits)).toBe(1);
+});
+
+for(const stage of ['constructor','load','set'])test(`native editor ${stage} failure cleans its mount and retains readable source`,async({page})=>{
+  await create(page);await page.evaluate(stage=>{window.nativeFailureStage=stage;},stage);await panel(page,'A').locator('p').click();await expect(page.locator('.section-variants-column-editor')).toHaveCount(0);await expect(panel(page,'A').locator('p')).toBeVisible();expect((await snapshot(page)).source).toBe(SOURCE);expect(await page.evaluate(()=>window.notices.some(text=>text.includes('could not open')))).toBe(true);
+});
+
+test('Reading View reuses unchanged bodies for selection, visibility and view updates',async({page})=>{
+  await page.evaluate(()=>{const source=':::: {.variants #reading view="columns"}\n::: A\nFirst\n:::\n::: B\nSecond\n:::\n::::';window.readingSource=source;const root=document.body.createDiv({cls:'reading-test'});document.body.append(root);window.readingBlock=window.h.parseNote(source).blocks[0];window.readingRenderer=new window.h.VariantBlockRenderer(window.h.host,root,'Reading.md',source,window.readingBlock);window.readingRenderer.load();});
+  await expect(page.locator('.reading-test .section-variants-prose p')).toHaveCount(2);const before=await page.evaluate(()=>window.renderCount);
+  await page.evaluate(()=>{window.h.store.setSelectedLabel('Reading.md',window.readingBlock,'B');window.h.store.toggleHidden('Reading.md',window.readingBlock,'A');window.h.store.setView('Reading.md',window.readingBlock,'toggle');});
+  expect(await page.evaluate(()=>window.renderCount)).toBe(before);await expect(page.locator('.reading-test .section-variants-panel[data-label="B"]')).toBeVisible();await expect(page.locator('.reading-test .section-variants-panel[data-label="A"]')).not.toBeVisible();await page.evaluate(()=>window.readingRenderer.unload());await expect(page.locator('.reading-test').locator('button')).toHaveCount(0);
+});
+
+test('unload cancels a Reading coordinator read and owned menu actions',async({page})=>{
+  await page.evaluate(()=>{const file=new window.h.TFile('Reading.md');const host={...window.h.host,app:{...window.h.host.app,vault:{getAbstractFileByPath:()=>file,cachedRead:()=>new Promise(resolve=>window.finishRead=resolve)}}};window.coordinator=new window.h.ReadingViewCoordinator(host);const root=document.body.createDiv({cls:'markdown-preview-view'});document.body.append(root);const paragraph=root.createEl('p',{text:':::: variants'});window.coordinator.postProcess(paragraph,{sourcePath:'Reading.md',getSectionInfo:()=>({lineStart:0,lineEnd:20}),addChild:()=>window.lateChildren++});window.lateChildren=0;});
+  await expect.poll(()=>page.evaluate(()=>typeof window.finishRead)).toBe('function');await page.evaluate(()=>{window.coordinator.dispose();window.finishRead(':::: {.variants}\n::: A\nFirst\n:::\n::: B\nSecond\n:::\n::::');});expect(await page.evaluate(()=>window.lateChildren)).toBe(0);await expect(page.locator('.section-variants-mount')).toHaveCount(0);
+  await page.evaluate(()=>{const button=document.body.createEl('button');button.onclick=event=>window.h.openAttachedMenu(event,[{label:'Action',onSelect:()=>window.lateChildren++}]);button.click();window.h.closeAttachedMenus();});await expect(page.locator('.section-variants-context-menu')).toHaveCount(0);
+});
+
+for(const mode of ['authored','current'])test(`unowned and invalid nested text remain in ${mode} HTML`,async({page})=>{
+  const html=await page.evaluate(async mode=>{const child=':::: {.variants}\n::: A\nNested one\n:::\n::: A\nNested duplicate\n:::\n::::';const source=`:::::: {.variants}\nPreamble\n::::: A\n${child}\n:::::\nBetween\n::::: B\nSecond\n:::::\nTrailing\n::::::`;return window.h.renderHtmlDocument({app:window.h.host.app,store:window.h.store.snapshot()},new window.h.TFile('Export.md'),source,window.h.parseNote(source),mode);},mode);for(const text of ['Preamble','Between','Trailing','Nested one','Nested duplicate','Second'])expect(html).toContain(text);
+});
+
+test('reusing the same sticky view binds its global controls to the new note',async({page})=>{
+  await page.evaluate(()=>{const h=window.h;const block=(id)=>`:::: {.variants #${id}}\n::: A\nFirst\n:::\n::: B\nSecond\n:::\n::::`;const source=block('one')+'\n'+block('two');const view=new h.MarkdownView();view.file={path:'First.md'};view.editor={getValue:()=>source};view.containerEl=document.body.createDiv();const host={...h.host,app:{...h.host.app,workspace:{...h.host.app.workspace,getLeavesOfType:()=>[{view}]}}};window.sticky=new h.StickyControlManager(host);window.sticky.refresh();view.file={path:'Second.md'};window.sticky.refresh();view.containerEl.querySelector('.section-variants-labels button[aria-label="B"]').click();});
+  expect(await page.evaluate(()=>window.h.store.getNote('Second.md')?.globalLabel)).toBe('B');expect(await page.evaluate(()=>window.h.store.getNote('First.md')?.globalLabel)).toBeUndefined();await page.evaluate(()=>window.sticky.destroy());await expect(page.locator('.section-variants-sticky-control')).toHaveCount(0);
+});
+
+test('export captures editor text and UI state once and does not repeat a delayed file creation',async({page})=>{
+  await page.evaluate(()=>{const h=window.h,file=new h.TFile('Export.md');window.exportSource=':::: {.variants #export}\n::: A\nFirst\n:::\n::: B\nEditor snapshot\n:::\n::::';const block=h.parseNote(window.exportSource).blocks[0];h.store.setSelectedLabel('Export.md',block,'B');window.exportCreates=0;window.exportReads=0;const host={...h.host,app:{...h.host.app,workspace:{...h.host.app.workspace,getLeaf:()=>({openFile:async()=>{}})},vault:{cachedRead:async()=>window.exportSource.replace('Editor snapshot','Disk text'),getAbstractFileByPath:()=>null,create:async(path,html)=>{window.exportCreates++;window.exportedHtml=html;await new Promise(resolve=>window.finishExport=resolve);}}}};window.exportModal=new h.HtmlExportModal(host,file,()=>{window.exportReads++;return window.exportSource;});window.exportModal.open();window.exportModal.state='current';window.exportModal.export();window.exportModal.export();window.exportSource=window.exportSource.replace('Editor snapshot','Later editor text');h.store.setSelectedLabel('Export.md',block,'A');});
+  await expect.poll(()=>page.evaluate(()=>typeof window.finishExport)).toBe('function');expect(await page.evaluate(()=>window.exportCreates)).toBe(1);expect(await page.evaluate(()=>window.exportReads)).toBe(1);const html=await page.evaluate(()=>window.exportedHtml);expect(html).toContain('Editor snapshot');expect(html).not.toContain('Disk text');expect(html).not.toContain('Later editor text');expect(html).not.toContain('<h2>A</h2>');await page.evaluate(()=>window.finishExport());await expect(page.locator('.modal-content')).toHaveCount(0);
+});
+
+test('a delayed fallback cannot create a nested renderer after its owner unloads',async({page})=>{
+  await page.evaluate(()=>{const h=window.h;const child=':::: {.variants}\n::: A\nNested first\n:::\n::: B\nNested second\n:::\n::::';const source=`:::::: {.variants #outer}\n::::: A\nBefore child\n${child}\nAfter child\n:::::\n::::: B\nOther\n:::::\n::::::`;window.unsupportedPreview=true;window.renderDelay=new Promise(resolve=>window.finishFallback=resolve);const root=document.body.createDiv({cls:'late-render-root'});window.lateRenderer=new h.VariantBlockRenderer(h.host,root,'Late.md',source,h.parseNote(source).blocks[0]);window.lateRenderer.load();});
+  await expect.poll(()=>page.evaluate(()=>window.renderCount)).toBeGreaterThan(0);await page.evaluate(()=>{window.lateRenderer.unload();window.finishFallback();window.renderDelay=null;});await expect(page.locator('.late-render-root').locator('*')).toHaveCount(0);expect(await page.evaluate(()=>window.lateRenderer.nestedRenderers.length)).toBe(0);
+});
+
+for (const responsive of ['responsive', 'stack', 'scroll']) test(`standalone HTML retains authored ${responsive} layout and ratios`, async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 900 });
+  const result = await page.evaluate(async responsive => {
+    const h = window.h;
+    const source = `:::: {.variants view="columns" widths="2fr 1fr" min-width="150px" responsive="${responsive}"}\n::: A\nFirst text\n:::\n::: B\nSecond text\n:::\n::::`;
+    const html = await h.renderHtmlDocument({ app: h.host.app, store: h.store.snapshot() }, { path: 'Layout.md', basename: 'Layout' }, source, h.parseNote(source), 'authored');
+    const frame = document.createElement('iframe'); frame.style.width = '1100px'; frame.style.height = '500px'; frame.srcdoc = html;
+    await new Promise(resolve => { frame.onload = resolve; document.body.append(frame); });
+    const block = frame.contentDocument.querySelector('.section-variants-export-columns');
+    const wide = getComputedStyle(block).gridTemplateColumns.split(' ').map(parseFloat);
+    frame.style.width = '250px'; await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    return { responsive: block.dataset.responsive, wide, narrow: getComputedStyle(block).gridTemplateColumns.split(' ').length, overflow: block.scrollWidth > block.clientWidth };
+  }, responsive);
+  expect(result.responsive).toBe(responsive);
+  if (responsive === 'stack') expect(result.wide.length).toBe(1);
+  else expect(result.wide[0] / result.wide[1]).toBeCloseTo(2, 1);
+  if (responsive === 'scroll') expect(result.overflow).toBe(true);
+  else expect(result.narrow).toBe(1);
+});
+
+
+test('whole-note external replacement rebinds a unique authored column ID', async ({page})=>{
+ await create(page);await panel(page,'A').locator('p').click();
+ await page.evaluate(()=>{const view=window.h.views[0];view.dispatch({changes:{from:0,to:view.state.doc.length,insert:view.state.doc.toString().replace('Alpha','Updated externally')},userEvent:'set'})});
+ await expect(page.locator('.section-variants-column-editor')).toHaveCount(1);await panel(page,'A').locator('.cm-content').pressSequentially('!');
+ expect((await snapshot(page)).source).toMatch(/Updated externally.*!|!.*Updated externally/);expect((await snapshot(page)).source).toContain('Beta [link] [ ]');
 });

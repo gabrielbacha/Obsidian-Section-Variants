@@ -1,3 +1,6 @@
+export const MIN_COLUMN_RATIO=0.000001;
+export const MAX_COLUMN_RATIO=1000000;
+export function validColumnRatios(values:readonly number[]):boolean{return values.length>0&&values.every(value=>Number.isFinite(value)&&value>=MIN_COLUMN_RATIO&&value<=MAX_COLUMN_RATIO);}
 const SIMPLE_TRACK = /^(\d+(?:\.\d+)?)(?:fr|%)$/u;
 
 /** Read ratios previously saved as simple fractional or percentage tracks. */
@@ -21,12 +24,7 @@ export function parseColumnRatios(
 export function serializeColumnRatios(
 	values: readonly number[],
 ): string | undefined {
-	if (
-		values.length === 0 ||
-		values.some((value) => !Number.isFinite(value) || value <= 0)
-	) {
-		return undefined;
-	}
+	if(!validColumnRatios(values))return undefined;
 	if (values.every((value) => value === values[0])) return undefined;
 	return values.map((value) => `${formatRatio(value)}fr`).join(' ');
 }
@@ -49,5 +47,5 @@ export function visibleColumnWidths(
 }
 
 function formatRatio(value: number): string {
-	return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(3)));
+	return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(6)));
 }

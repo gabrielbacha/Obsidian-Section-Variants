@@ -11,6 +11,7 @@ export interface VariantHeaderOptions {
 export interface VariantHeaderHandle {
 	element: HTMLElement;
 	rebind(source: string, variant: VariantSection): void;
+	setHideVisible(visible:boolean):void;
 }
 
 /** Exact Markdown inside the variant, excluding only its own fences. */
@@ -46,8 +47,9 @@ export function createVariantHeader({
 			parent.ownerDocument,
 		);
 	});
+	let hide:HTMLButtonElement|undefined;
 	if (onHide) {
-		const hide = actions.createEl('button', {
+		hide = actions.createEl('button', {
 			type: 'button',
 			cls: 'clickable-icon',
 			attr: { 'aria-label': `Hide ${initialVariant.label} column` },
@@ -58,6 +60,7 @@ export function createVariantHeader({
 	}
 	return {
 		element: header,
+		setHideVisible(visible){if(hide)hide.style.display=visible?'':'none';},
 		rebind(nextSource, nextVariant) {
 			currentSource = nextSource;
 			currentVariant = nextVariant;

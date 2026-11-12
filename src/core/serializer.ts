@@ -44,9 +44,7 @@ export function serializeVariantsBlock(
 	const lines = [`${outerFence} {${attributes.join(' ')}}`, ''];
 	let firstContentOffset = 0;
 	for (const [index, label] of labels.entries()) {
-		const opening = SAFE_SHORTHAND_LABEL.test(label)
-			? `${innerFence} ${label}`
-			: `${innerFence} {.variant label="${escapeAttribute(label)}"}`;
+		const opening = serializeVariantOpening(innerLength,label);
 		lines.push(opening);
 		if (index === 0) {
 			firstContentOffset = lines.join('\n').length + 1;
@@ -59,6 +57,44 @@ export function serializeVariantsBlock(
 
 export function escapeAttribute(value: string): string {
 	return value.replace(/\\/gu, '\\\\').replace(/"/gu, '\\"');
+}
+
+/** Change only named tokens; preserve aliases, classes, IDs and legacy values. */
+export function patchOpeningAttribute(opening: string, key: string, value: string | undefined): string {
+	const close = opening.lastIndexOf('}');
+	if (close < 0) {
+		if (value === undefined) return opening;
+		const match = /^(\s*:{3,}\s+)(.*)$/u.exec(opening);
+		if (!match) throw new Error('The opening fence is invalid.');
+		return `${match[1]}{.${match[2]?.trim()} ${key}="${escapeAttribute(value)}"}`;
+	}
+	const pattern = key === 'id'
+		? /(^|\s)#[^\s}]+/u
+		: new RegExp(`(^|\\s)${key}=(?:"(?:\\\\.|[^"\\\\])*"|[^\\s}]+)`, 'u');
+	const token = value === undefined ? '' : key === 'id' ? `#${value}` : `${key}="${escapeAttribute(value)}"`;
+	if (pattern.test(opening)) return opening.replace(pattern, (_match, space: string) => `${space}${token}`);
+	if (!token) return opening;
+	return `${opening.slice(0, close).trimEnd()} ${token}${opening.slice(close)}`;
+}
+
+export function patchContainerOpening(opening: string, before: ContainerAttributes, after: ContainerAttributes): string {
+	const keys: [keyof ContainerAttributes, string][] = [
+		['id', 'id'], ['name', 'name'], ['view', 'view'], ['defaultLabel', 'default'],
+		['widths', 'widths'], ['minWidth', 'min-width'], ['responsive', 'responsive'],
+	];
+	let result = opening;
+	for (const [property, token] of keys) if (before[property] !== after[property]) {
+		result = patchOpeningAttribute(result, token, after[property]);
+	}
+	return result;
+}
+
+export function patchVariantOpening(opening: string, label: string): string {
+	if (opening.includes('{')) return patchOpeningAttribute(opening, 'label', label);
+	const match = /^(\s*:{3,}\s+).*$/u.exec(opening);
+	if (!match) throw new Error('The variant opening fence is invalid.');
+	return SAFE_SHORTHAND_LABEL.test(label) ? `${match[1]}${label}`
+		: `${match[1]}{.variant label="${escapeAttribute(label)}"}`;
 }
 
 export function serializeContainerOpening(
@@ -90,4 +126,10 @@ export function serializeContainerOpening(
 
 export function defaultHtmlExportPath(markdownPath: string): string {
 	return `${markdownPath.replace(/\.md$/iu, '')} variants.html`;
+}
+
+export function serializeVariantOpening(colonCount:number,label:string):string{
+ const marker=':'.repeat(Math.max(3,colonCount)),value=label.trim();
+ if(!value||/[\r\n]/u.test(value))throw new Error('Enter a label on one line.');
+ return SAFE_SHORTHAND_LABEL.test(value)?`${marker} ${value}`:`${marker} {.variant label="${escapeAttribute(value)}"}`;
 }

@@ -1,3 +1,5 @@
+import {serializeVariantOpening} from '../core/serializer';
+import {findBlockAtOffset,findVariantAtOffset} from '../core/types';
 import {
 	Editor,
 	EditorPosition,
@@ -23,6 +25,7 @@ export class VariantsEditorSuggest extends EditorSuggest<Suggestion> {
 		private readonly openInsertModal: (
 			editor: Editor,
 			position: EditorPosition,
+			end?:EditorPosition,
 		) => void,
 	) {
 		super(host.app);
@@ -56,7 +59,7 @@ export class VariantsEditorSuggest extends EditorSuggest<Suggestion> {
 				query: 'variants',
 			};
 		}
-		const label = before.match(/^(\s*:::\s+)([^{}]*)$/u);
+		const label = before.match(/^( {0,3}:{3,}\s+)([^{}]*)$/u);
 		if (!label?.[1]) return null;
 		const offset = editor.posToOffset(cursor);
 		const insideVariants = this.host
@@ -67,7 +70,7 @@ export class VariantsEditorSuggest extends EditorSuggest<Suggestion> {
 		if (!insideVariants) return null;
 		this.mode = 'label';
 		return {
-			start: { line: cursor.line, ch: label[1].length },
+			start: { line: cursor.line, ch: 0 },
 			end: cursor,
 			query: label[2] ?? '',
 		};
@@ -84,10 +87,14 @@ export class VariantsEditorSuggest extends EditorSuggest<Suggestion> {
 			];
 		}
 
+		const parsed=this.host.parse(context.editor.getValue());
+		const block=findBlockAtOffset(parsed,context.editor.posToOffset(context.end));
+		const current=block&&findVariantAtOffset(block,context.editor.posToOffset(context.end));
+		const excluded=new Set(block?.variants.filter(variant=>variant!==current&&variant.opening.lineStart!==context.start.line).map(variant=>variant.normalizedLabel));
 		return filterLabelCatalog(
-			collectLabelCatalog(this.host.parse(context.editor.getValue()).blocks),
+			collectLabelCatalog(parsed.blocks),
 			context.query,
-			new Set(),
+			excluded,
 		)
 			.map((entry) => ({
 				type: 'label',
@@ -105,10 +112,11 @@ export class VariantsEditorSuggest extends EditorSuggest<Suggestion> {
 		const context = this.context;
 		if (!context) return;
 		if (suggestion.type === 'insert') {
-			context.editor.replaceRange('', context.start, context.end);
-			this.openInsertModal(context.editor, context.start);
+			this.openInsertModal(context.editor, context.start,context.end);
 		} else {
-			context.editor.replaceRange(suggestion.label, context.start, context.end);
+			const line=context.editor.getLine(context.start.line);const marker=line.match(/^( {0,3})(:{3,})/u);
+			if(!marker?.[2])return;
+			context.editor.replaceRange((marker[1]??'')+serializeVariantOpening(marker[2].length,suggestion.label),context.start,context.end);
 		}
 		this.close();
 	}

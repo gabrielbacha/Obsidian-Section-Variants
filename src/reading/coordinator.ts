@@ -35,18 +35,24 @@ interface RootState {
 }
 
 export class ReadingViewCoordinator {
-	private readonly scheduledRoots = new WeakSet<HTMLElement>();
+	private readonly scheduledRoots = new Map<HTMLElement,number>();
+	private readonly generations = new WeakMap<HTMLElement,number>();
+	private readonly sourcePaths = new WeakMap<HTMLElement,string>();
+	private disposed=false;
 	private readonly rootStates = new WeakMap<HTMLElement, RootState>();
 	private readonly processedOpenings = new WeakSet<HTMLElement>();
 	private readonly renderers = new Map<string, Set<VariantBlockRenderer>>();
 
 	constructor(private readonly host: SectionVariantsHost) {}
 
+	dispose():void{this.disposed=true;for(const timer of this.scheduledRoots.values())window.clearTimeout(timer);this.scheduledRoots.clear();for(const renderers of [...this.renderers.values()])for(const renderer of [...renderers])renderer.unload();this.renderers.clear();}
+
 	hasRenderers(path: string): boolean {
 		return Boolean(this.renderers.get(path)?.size);
 	}
 
 	rebind(path: string, source: string): void {
+		if(this.disposed)return;
 		const renderers = this.renderers.get(path);
 		if (!renderers) return;
 		const blocks = this.host.parse(source).blocks;
@@ -54,6 +60,7 @@ export class ReadingViewCoordinator {
 	}
 
 	postProcess(el: HTMLElement, context: MarkdownPostProcessorContext): void {
+		if(this.disposed)return;
 		// Native preview sections are post-processed before attachment. The host
 		// supplies their owning sizer in the context; closest(el) alone would
 		// treat every detached section as a separate note (or recurse into a
@@ -83,19 +90,19 @@ export class ReadingViewCoordinator {
 		this.schedule(root, context.sourcePath);
 	}
 
-	private schedule(root: HTMLElement, sourcePath: string): void {
-		if (this.scheduledRoots.has(root)) return;
-		this.scheduledRoots.add(root);
-		window.setTimeout(() => {
-			this.scheduledRoots.delete(root);
-			void this.processRoot(root, sourcePath);
-		}, 0);
+	private schedule(root:HTMLElement,sourcePath:string):void{
+		if(this.disposed)return;
+		this.generations.set(root,(this.generations.get(root)??0)+1);this.sourcePaths.set(root,sourcePath);
+		if(this.scheduledRoots.has(root))return;
+		const timer=window.setTimeout(()=>{this.scheduledRoots.delete(root);const generation=this.generations.get(root)??0;void this.processRoot(root,this.sourcePaths.get(root)??sourcePath,generation).catch(error=>{if(!this.disposed)new Notice(error instanceof Error?error.message:'Section Variants rendering failed.');});},0);
+		this.scheduledRoots.set(root,timer);
 	}
 
-	private async processRoot(root: HTMLElement, sourcePath: string): Promise<void> {
+	private async processRoot(root: HTMLElement, sourcePath: string,generation:number): Promise<void> {
 		const file = this.host.app.vault.getAbstractFileByPath(sourcePath);
 		if (!(file instanceof TFile)) return;
 		const source = await this.host.app.vault.cachedRead(file);
+		if(this.disposed||this.generations.get(root)!==generation)return;
 		const parsed = this.host.parse(source);
 		const state = this.rootStates.get(root);
 		if (!state || parsed.blocks.length === 0) return;

@@ -119,20 +119,11 @@ describe('addStableBlockId', () => {
 		expect(parse(read()).blocks[0]?.variants).toHaveLength(2);
 	});
 
-	it('adds a second, distinct ID without disturbing the first', async () => {
-		/*
-		 * A smoke test, not a proof of collision handling: with a 36^6 space a
-		 * natural collision will not occur here. Exercising the retry path would
-		 * need injectable randomness, which `randomId` does not currently expose.
-		 */
-		const { app, path, read, firstBlock } = setup(TWO_VARIANTS);
-		const first = await addStableBlockId(app, path, firstBlock(), parse);
-
-		const second = await addStableBlockId(app, path, firstBlock(), parse);
-
-		expect(second.id).not.toBe(first.id);
-		expect(read()).toContain(first.id);
-		expect(read()).toContain(second.id);
+	it('keeps an existing stable ID and makes the second call a no-op', async () => {
+		const { app,path,read,firstBlock }=setup(TWO_VARIANTS);
+		const first=await addStableBlockId(app,path,firstBlock(),parse),before=read();
+		const second=await addStableBlockId(app,path,firstBlock(),parse);
+		expect(second.id).toBe(first.id);expect(read()).toBe(before);
 	});
 
 	it('refuses to add an ID when the block has no closing fence', async () => {
@@ -282,17 +273,18 @@ describe('addVariant', () => {
 		expect(read()).toBe(TWO_VARIANTS);
 	});
 
-	it('re-resolves against an externally updated editor and preserves remote text', async () => {
+	it('rejects a stale anonymous target while preserving externally updated source', async () => {
 		const { app, path, read, firstBlock } = setup(TWO_VARIANTS);
 		const staleTarget = firstBlock();
 		const editor = new FakeEditor(read());
 		editor.setValue(`Remote introduction.\n\n${TWO_VARIANTS.replace('Alpha.', 'Alpha changed remotely.')}`);
 
-		await addVariant(app, path, staleTarget, 'C', parse, editor as never);
+		await expect(addVariant(app,path,staleTarget,'C',parse,editor as never)).rejects.toThrow('changed');
 
 		expect(editor.getValue()).toContain('Remote introduction.');
 		expect(editor.getValue()).toContain('Alpha changed remotely.');
-		expect(parse(editor.getValue()).blocks[0]?.variants).toHaveLength(3);
+		expect(parse(editor.getValue()).blocks[0]?.variants).toHaveLength(2);
+		expect(editor.transactionCount).toBe(0);
 	});
 
 	it('aborts without writing when an external update removed the target block', async () => {
@@ -404,7 +396,7 @@ describe('updateBlockAttributes', () => {
 		const second = await updateBlockAttributesPatch(
 			app,
 			path,
-			staleTarget,
+			result.after,
 			{ view: 'toggle' },
 			parse,
 		);
@@ -565,4 +557,12 @@ describe('deleteBlock', () => {
 		expect(editor.getValue()).toContain('Before.\r\n');
 		expect(editor.getValue()).toContain('After.\r\n');
 	});
+});
+
+describe('structural transaction acknowledgement',()=>{
+ it('rejects host-filtered edits before returning state mappings',async()=>{
+  const {app,path,read,firstBlock}=setup(TWO_VARIANTS);const before=read(),editor=new FakeEditor(before);editor.transaction=()=>{};
+  await expect(addVariant(app,path,firstBlock(),'C',parse,editor as never)).rejects.toThrow('did not accept');
+  expect(editor.getValue()).toBe(before);expect(read()).toBe(before);
+ });
 });

@@ -1,9 +1,10 @@
+import { textChange } from './text-diff';
 import { App, Editor, TFile } from 'obsidian';
 import { SAFE_SHORTHAND_LABEL } from './attributes';
-import { resolveCurrentBlock } from './block-resolution';
+import { resolveMutationBlock } from './block-resolution';
 import { parseColumnRatios, serializeColumnRatios } from './column-ratios';
 import { randomBytes } from './random';
-import { escapeAttribute, serializeContainerOpening } from './serializer';
+import { escapeAttribute, patchContainerOpening, patchVariantOpening } from './serializer';
 import { STRUCTURAL_TRANSACTION_ORIGIN } from './structural-transaction';
 import {
 	ContainerAttributes,
@@ -80,7 +81,7 @@ export async function addVariant(
 			edits.push({
 				from: current.opening.from,
 				to: current.opening.to,
-				text: serializeContainerOpening(current.opening.colonCount, {
+				text: patchContainerOpening(source.slice(current.opening.from, current.opening.to), current.attributes, {
 					...current.attributes,
 					widths: serializeColumnRatios([...ratios, 1]),
 				}),
@@ -140,9 +141,9 @@ export async function deleteVariant(
 			edits.push({
 				from: current.opening.from,
 				to: current.opening.to,
-				text: serializeContainerOpening(
-					current.opening.colonCount,
-					updatedAttributes,
+				text: patchContainerOpening(
+					source.slice(current.opening.from, current.opening.to),
+					current.attributes, updatedAttributes,
 				),
 			});
 		}
@@ -161,7 +162,7 @@ export async function deleteBlock(
 	let result: Omit<DeleteBlockMutationResult, 'source'> | undefined;
 	const source = await processSource(app, path, editor, (source) => {
 		const parsed = parse(source);
-		const current = resolveCurrentBlock(target, parsed.blocks);
+		const current = resolveMutationBlock(target, parsed.blocks);
 		if (!current) {
 			throw new Error('The variants box changed. Reopen the menu and try again.');
 		}
@@ -205,6 +206,7 @@ export async function addStableBlockId(
 ): Promise<StableIdMutationResult> {
 	let id = '';
 	const mapping = await processTarget(app, path, target, parse, (source, current) => {
+		if (current.attributes.id || current.blockId) { id=current.attributes.id??current.blockId??''; return source; }
 		if (!current.closing) throw new Error('Close the variants block before adding an ID.');
 		// Generated here so it can be checked against IDs already in the note.
 		id = `variants-${randomId(existingIds(source))}`;
@@ -246,9 +248,9 @@ export async function updateBlockAttributes(
 	editor?: Editor,
 ): Promise<BlockIdentityMapping & SourceMutationResult> {
 	return processTarget(app, path, target, parse, (source, current) => {
-		const opening = serializeContainerOpening(
-			current.opening.colonCount,
-			attributes,
+		const opening = patchContainerOpening(
+			source.slice(current.opening.from, current.opening.to),
+			current.attributes, attributes,
 		);
 		return `${source.slice(0, current.opening.from)}${opening}${source.slice(current.opening.to)}`;
 	}, editor);
@@ -263,7 +265,7 @@ export async function updateBlockAttributesPatch(
 	editor?: Editor,
 ): Promise<BlockIdentityMapping & SourceMutationResult> {
 	return processTarget(app, path, target, parse, (source, current) => {
-		const opening = serializeContainerOpening(current.opening.colonCount, {
+		const opening = patchContainerOpening(source.slice(current.opening.from, current.opening.to), current.attributes, {
 			...current.attributes,
 			...patch,
 		});
@@ -306,7 +308,7 @@ export async function renameVariant(
 	let result: Omit<RenameMutationResult, 'source'> | undefined;
 	const source = await processSource(app, path, editor, (source) => {
 		const parsed = parse(source);
-		const currentTarget = resolveCurrentBlock(target, parsed.blocks);
+		const currentTarget = resolveMutationBlock(target, parsed.blocks);
 		if (!currentTarget) throw new Error('The variants block changed. Reopen rename and try again.');
 		if (!currentTarget.valid) throw new Error('Fix this variants block before renaming its labels.');
 		const normalizedOld = normalizeLabel(oldLabel);
@@ -328,8 +330,7 @@ export async function renameVariant(
 			if (existing && existing !== renamed) {
 				throw new Error(`Block on line ${block.opening.lineStart + 1} already has label ${trimmed}.`);
 			}
-			const marker = ':'.repeat(renamed.opening.colonCount);
-			const opening = serializeVariantOpening(marker, trimmed);
+			const opening = patchVariantOpening(source.slice(renamed.opening.from, renamed.opening.to), trimmed);
 			edits.push({ from: renamed.opening.from, to: renamed.opening.to, text: opening });
 			if (
 				block.attributes.defaultLabel &&
@@ -338,7 +339,7 @@ export async function renameVariant(
 				edits.push({
 					from: block.opening.from,
 					to: block.opening.to,
-					text: serializeContainerOpening(block.opening.colonCount, {
+					text: patchContainerOpening(source.slice(block.opening.from, block.opening.to), block.attributes, {
 						...block.attributes,
 						defaultLabel: trimmed,
 					}),
@@ -388,7 +389,7 @@ async function processTarget(
 	let mapping: BlockIdentityMapping | undefined;
 	const source = await processSource(app, path, editor, (source) => {
 		const parsed = parse(source);
-		const current = resolveCurrentBlock(target, parsed.blocks);
+		const current = resolveMutationBlock(target, parsed.blocks);
 		if (!current) throw new Error('The variants block changed. Try the action again.');
 		const index = parsed.blocks.indexOf(current);
 		const changed = change(source, current);
@@ -427,26 +428,17 @@ async function processSource(
 
 function applyEditorChange(editor: Editor, before: string, after: string): void {
 	if (before === after) return;
-	let prefix = 0;
-	const sharedLength = Math.min(before.length, after.length);
-	while (prefix < sharedLength && before[prefix] === after[prefix]) prefix += 1;
-	let suffix = 0;
-	while (
-		suffix < before.length - prefix &&
-		suffix < after.length - prefix &&
-		before[before.length - suffix - 1] === after[after.length - suffix - 1]
-	) {
-		suffix += 1;
-	}
+	const {from,to,insert}=textChange(before,after);
 	editor.transaction({
 		changes: [
 			{
-				from: editor.offsetToPos(prefix),
-				to: editor.offsetToPos(before.length - suffix),
-				text: after.slice(prefix, after.length - suffix),
+				from: editor.offsetToPos(from),
+				to: editor.offsetToPos(to),
+				text: insert,
 			},
 		],
 	}, STRUCTURAL_TRANSACTION_ORIGIN);
+	if(editor.getValue()!==after)throw new Error('Obsidian did not accept the structural change. Source state was not migrated.');
 }
 
 function resolveFile(app: App, path: string): TFile {

@@ -1,7 +1,9 @@
+import {ActionModal} from '../ui/action-modal';
+import type {StateSnapshot} from '../state/store';
 import {
 	Component,
 	MarkdownRenderer,
-	Modal,
+	Notice,
 	normalizePath,
 	Setting,
 	TFile,
@@ -14,9 +16,12 @@ import {
 import { defaultHtmlExportPath } from '../core/serializer';
 import { SectionVariantsHost } from '../plugin-host';
 import { ExportState, selectExportVariants } from './selection';
+import { visibleColumnWidths, parseColumnRatios } from '../core/column-ratios';
 
 
-export class HtmlExportModal extends Modal {
+interface ExportHost {app:SectionVariantsHost['app'];store:StateSnapshot;}
+
+export class HtmlExportModal extends ActionModal {
 	private outputPath: string;
 	private state: ExportState;
 	private errorEl?: HTMLElement;
@@ -24,6 +29,7 @@ export class HtmlExportModal extends Modal {
 	constructor(
 		private readonly host: SectionVariantsHost,
 		private readonly file: TFile,
+		private readonly readSource?:()=>string|Promise<string>,
 	) {
 		super(host.app);
 		this.outputPath = defaultHtmlExportPath(file.path);
@@ -69,6 +75,7 @@ export class HtmlExportModal extends Modal {
 	}
 
 	onClose(): void {
+		this.closedSubmission();
 		this.contentEl.empty();
 	}
 
@@ -77,33 +84,21 @@ export class HtmlExportModal extends Modal {
 			this.errorEl?.setText('Choose an output path.');
 			return;
 		}
-		try {
-			const source = await this.host.app.vault.cachedRead(this.file);
-			const html = await renderHtmlDocument(
-				this.host,
-				this.file,
-				source,
-				this.host.parse(source),
-				this.state,
-			);
-			const path = await uniqueHtmlPath(this.host, this.outputPath);
-			await this.host.app.vault.create(path, html);
-			this.close();
-			const created = this.host.app.vault.getAbstractFileByPath(path);
-			if (created instanceof TFile) {
-				await this.host.app.workspace.getLeaf(false).openFile(created);
-			}
-		} catch (error) {
-			this.errorEl?.setText(
-				error instanceof Error ? error.message : 'HTML export failed.',
-			);
-		}
+		const mode=this.state,outputPath=this.outputPath,snapshot=this.host.store.snapshot(),fileSnapshot={path:this.file.path,basename:this.file.basename};
+		await this.perform(async()=>{
+			const source=this.readSource?await this.readSource():await this.host.app.vault.cachedRead(this.file);
+			const host:ExportHost={app:this.host.app,store:snapshot};
+			const html=await renderHtmlDocument(host,fileSnapshot,source,this.host.parse(source),mode);
+			const path=await uniqueHtmlPath(this.host,outputPath);await this.host.app.vault.create(path,html);
+			const created=this.host.app.vault.getAbstractFileByPath(path);
+			if(created instanceof TFile&&!this.isSubmissionClosed())try{await this.host.app.workspace.getLeaf(false).openFile(created);}catch{new Notice('HTML was created, but Obsidian could not open it.');}
+		},this.errorEl);
 	}
 }
 
 export async function renderHtmlDocument(
-	host: SectionVariantsHost,
-	file: TFile,
+	host: ExportHost,
+	file: Pick<TFile,'path'|'basename'>,
 	source: string,
 	parsed: ParsedNote,
 	state: ExportState,
@@ -156,7 +151,7 @@ export async function renderHtmlDocument(
 }
 
 async function renderExportBlock(
-	host: SectionVariantsHost,
+	host: ExportHost,
 	path: string,
 	source: string,
 	block: VariantBlock,
@@ -175,6 +170,17 @@ async function renderExportBlock(
 	const wrapper = target.createDiv({
 		cls: `section-variants-export-block section-variants-export-${view}`,
 	});
+	wrapper.dataset.responsive = selection.responsive;
+	wrapper.style.setProperty('--sv-count', String(Math.max(1, selection.variants.length)));
+	if (CSS.supports('width', selection.minWidth)) wrapper.style.setProperty('--sv-min-width', selection.minWidth);
+	const indexes = selection.variants.map(variant => block.variants.indexOf(variant));
+	const widths = visibleColumnWidths(selection.widths, block.variants.length, indexes);
+	if (widths && !/[;{}]/u.test(widths) && CSS.supports('grid-template-columns', widths)) {
+		const ratios = parseColumnRatios(widths, selection.variants.length);
+		const exportedWidths = selection.responsive === 'scroll' && ratios && CSS.supports('width', selection.minWidth)
+			? ratios.map(ratio => `minmax(${selection.minWidth}, ${ratio}fr)`).join(' ') : widths;
+		wrapper.style.setProperty('--sv-widths', exportedWidths);
+	}
 	if (block.attributes.name) {
 		wrapper.createEl('h1', {
 			cls: 'section-variants-export-name',
@@ -189,7 +195,7 @@ async function renderExportBlock(
 }
 
 async function renderVariant(
-	host: SectionVariantsHost,
+	host: ExportHost,
 	path: string,
 	source: string,
 	variant: VariantSection,
@@ -225,7 +231,7 @@ async function renderVariant(
 }
 
 async function renderMarkdown(
-	host: SectionVariantsHost,
+	host: ExportHost,
 	path: string,
 	markdown: string,
 	target: HTMLElement,
@@ -236,7 +242,7 @@ async function renderMarkdown(
 }
 
 async function uniqueHtmlPath(
-	host: SectionVariantsHost,
+	host: ExportHost,
 	requested: string,
 ): Promise<string> {
 	const normalized = normalizePath(
@@ -270,7 +276,9 @@ function exportCss(minColumnWidth: string): string {
 body { margin: 0 auto; max-width: 72rem; padding: 2rem; color: var(--sv-fg); background: var(--sv-bg); font: 16px/1.55 system-ui, sans-serif; }
 .section-variants-export-block { margin: 1.5rem 0; }
 .section-variants-export-name { grid-column: 1 / -1; margin: 0 0 .5rem; font-size: 1rem; }
-.section-variants-export-columns, .section-variants-export-auto { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, ${minColumnWidth}), 1fr)); gap: 1.5rem; }
+.section-variants-export-columns, .section-variants-export-auto { display: grid; grid-template-columns: var(--sv-widths, repeat(auto-fit, minmax(min(100%, var(--sv-min-width, ${minColumnWidth})), 1fr))); gap: 1.5rem; }
+.section-variants-export-columns[data-responsive="stack"] { grid-template-columns: 1fr; }
+.section-variants-export-columns[data-responsive="scroll"] { grid-template-columns: var(--sv-widths, repeat(var(--sv-count, 1), minmax(var(--sv-min-width, ${minColumnWidth}), 1fr))); overflow-x: auto; }
 .section-variants-export-block > section { min-width: 0; }
 .section-variants-export-columns > section + section, .section-variants-export-auto > section + section { padding-left: 1.5rem; border-left: 1px solid var(--sv-rule); }
 .section-variants-export-block > section > h2:first-child { margin-top: 0; color: var(--sv-muted); font-size: .75rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
@@ -279,6 +287,7 @@ pre { overflow: auto; }
 a { color: inherit; }
 @media (max-width: 42rem) {
   body { padding: 1rem; }
+  .section-variants-export-columns[data-responsive="responsive"] { grid-template-columns: 1fr; }
   .section-variants-export-columns > section + section, .section-variants-export-auto > section + section { padding-left: 0; border-left: 0; }
 }
 `;

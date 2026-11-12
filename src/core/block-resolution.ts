@@ -43,3 +43,12 @@ export function resolveCurrentBlock(
 	);
 	return structural.length === 1 ? structural[0] : undefined;
 }
+
+/** Deferred structure changes need a unique stable ID or the unchanged complete source. */
+export function resolveMutationBlock(target: VariantBlock,candidates:readonly VariantBlock[]):VariantBlock|undefined{
+ const stable=target.attributes.id??target.blockId;
+ if(stable){const matches=candidates.filter(candidate=>(candidate.attributes.id??candidate.blockId)===stable);const current=matches.length===1?matches[0]:undefined;if(!current||target.sourceSnapshot===undefined||current.sourceSnapshot===undefined)return undefined;return target.sourceSnapshot.slice(target.range.from,target.range.to)===current.sourceSnapshot.slice(current.range.from,current.range.to)?current:undefined;}
+ if(target.sourceSnapshot===undefined||candidates.some(candidate=>candidate.sourceSnapshot!==target.sourceSnapshot))return undefined;
+ const matches=candidates.filter(candidate=>candidate.identityKey===target.identityKey&&candidate.opening.from===target.opening.from&&candidate.range.to===target.range.to);
+ return matches.length===1?matches[0]:undefined;
+}

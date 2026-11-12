@@ -95,6 +95,8 @@ Inactive Toggle variants are hidden in Live Preview. Columns retain their compar
 
 When another program changes an open note, Obsidian loads the change as usual, including into an open column editor. Section Variants does not read or reconcile the file itself. The external change is its own undo step. Section Variants blocks only direct typing, deleting, pasting, or dragging that would overwrite hidden fences or inactive variants. Changes from Obsidian, commands, and other plugins are never blocked.
 
+While the plugin is loaded, a failed state save keeps the current choices in memory. Use **Section Variants: Retry saving state** after storage is available. A source change that already succeeded is not repeated to retry its saved state.
+
 Blocks use an explicit Pandoc ID, a following Obsidian block ID, or a structural fingerprint for persistence. If duplicate fingerprints become ambiguous, use **Add stable block ID** or enable automatic IDs.
 
 Malformed blocks remain fully visible. The warning explains the exact problem, and automatic fixing is offered only for an unambiguous missing final fence.

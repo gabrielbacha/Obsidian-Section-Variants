@@ -5,6 +5,7 @@ import { mkdtemp, mkdir, writeFile, copyFile, readFile } from 'node:fs/promises'
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 
 /**
@@ -22,7 +23,15 @@ export async function launchObsidian({ files, app = {}, extraPlugins = [] }) {
 	const plugin = path.join(vault, '.obsidian/plugins/section-variants');
 	await mkdir(profile, { recursive: true });
 	await mkdir(plugin, { recursive: true });
-	for (const name of ['main.js', 'manifest.json', 'styles.css']) await copyFile(name, path.join(plugin, name));
+	const artifactHashes = {};
+	for (const name of ['main.js', 'manifest.json', 'styles.css']) {
+		const source = await readFile(name);
+		await copyFile(name, path.join(plugin, name));
+		artifactHashes[name] = createHash('sha256').update(source).digest('hex');
+		if (createHash('sha256').update(await readFile(path.join(plugin, name))).digest('hex') !== artifactHashes[name]) {
+			throw new Error(`Fixture artifact differs from built source: ${name}`);
+		}
+	}
 	if (process.env.OBSIDIAN_ASAR) await copyFile(process.env.OBSIDIAN_ASAR, path.join(profile, path.basename(process.env.OBSIDIAN_ASAR)));
 	await writeFile(path.join(profile, 'obsidian.json'), JSON.stringify({ updateDisabled: true, vaults: { '0123456789abcdef': { path: vault, ts: Date.now(), open: true } } }));
 	await writeFile(path.join(vault, '.obsidian/app.json'), JSON.stringify({ livePreview: true, ...app }));
@@ -48,9 +57,11 @@ export async function launchObsidian({ files, app = {}, extraPlugins = [] }) {
 	}
 	for (const [name, content] of Object.entries(files)) await writeFile(path.join(vault, name), content);
 	console.log('Disposable test vault:', vault);
+	const childEnv = Object.fromEntries(['PATH','HOME','TMPDIR','LANG','LC_ALL','TZ'].filter(key => process.env[key] !== undefined).map(key => [key, process.env[key]]));
 	const args = [
 		`--user-data-dir=${profile}`,
 		'--remote-debugging-port=0',
+		'--enable-automation',
 		// A hidden window must keep rendering and running timers normally.
 		'--disable-renderer-backgrounding',
 		'--disable-background-timer-throttling',
@@ -60,8 +71,8 @@ export async function launchObsidian({ files, app = {}, extraPlugins = [] }) {
 	// interrupts the user. SECTION_VARIANTS_TEST_VISIBLE=1 shows it instead.
 	const bundle = executable.match(/^(.*?\.app)\//u)?.[1];
 	const background = process.platform === 'darwin' && bundle && !process.env.SECTION_VARIANTS_TEST_VISIBLE;
-	if (background) spawn('open', ['-g', '-j', '-n', '-a', bundle, '--args', ...args], { stdio: 'ignore' });
-	else spawn(executable, args, { stdio: 'ignore' });
+	if (background) spawn('open', ['-g', '-j', '-n', '-a', bundle, '--args', ...args], { stdio: 'ignore', env: childEnv });
+	else spawn(executable, args, { stdio: 'ignore', env: childEnv });
 	let browser;
 	const errors = [];
 	const close = async () => {
@@ -88,7 +99,18 @@ export async function launchObsidian({ files, app = {}, extraPlugins = [] }) {
 		browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
 		const context = browser.contexts()[0];
 		const page = context.pages()[0] ?? await context.waitForEvent('page', { timeout: 20000 });
-		console.log('Window:', page.url(), await page.title());
+		// Prove both native profile and vault bindings before any trust, focus or editor action.
+		const normalize=value=>path.resolve(value).replace(/^\/private\/var\//u,'/var/');
+		const proofSession=await context.newCDPSession(page);
+		const command=await proofSession.send('Browser.getBrowserCommandLine');
+		if(!command.arguments.some(value=>value===`--user-data-dir=${profile}`)||!command.arguments.some(value=>normalize(value)===normalize(executable)))throw new Error('The debug session does not belong to this executable and generated profile.');
+		const nativeProfile=await page.evaluate(()=>{for(const name of ['@electron/remote','electron']){try{const load=window.require??(typeof require==='function'?require:undefined);const module=load?.(name),nativeApp=module?.app??module?.remote?.app;if(nativeApp?.getPath)return nativeApp.getPath('userData');}catch{/* Try the next supported host bridge. */}}return null;});
+		if(!nativeProfile||normalize(nativeProfile)!==normalize(profile))throw new Error('Native user-data isolation could not be proved; no UI action was taken.');
+		await page.waitForFunction(()=>Boolean(window.app?.vault?.adapter?.getBasePath),undefined,{timeout:20000});
+		const boundVault=await page.evaluate(()=>app.vault.adapter.getBasePath());
+		if(normalize(boundVault)!==normalize(vault))throw new Error('The test app opened an unexpected vault; no UI action was taken.');
+		await context.route('**/*',route=>{const url=new URL(route.request().url());if(['127.0.0.1','localhost'].includes(url.hostname)||['app:','file:','data:','blob:','devtools:'].includes(url.protocol))return route.continue();return route.abort('blockedbyclient');});
+		console.log('PASS: executable, native user-data directory and fixture vault are verified before UI actions.');
 		page.setDefaultTimeout(15000);
 		// The hidden window never has OS focus; let the page behave as focused.
 		const session = await context.newCDPSession(page);
@@ -106,6 +128,21 @@ export async function launchObsidian({ files, app = {}, extraPlugins = [] }) {
 			await app.plugins.setEnable(true);
 			for (const id of ids) if (!app.plugins.enabledPlugins.has(id)) await app.plugins.enablePlugin(id);
 		}, pluginIds);
+		const loaded = await page.evaluate(async () => {
+			const instance = app.plugins.getPlugin('section-variants');
+			const directory = app.plugins.manifests['section-variants']?.dir;
+			if (!instance || directory !== '.obsidian/plugins/section-variants') throw new Error('The plugin did not load from the fixture directory.');
+			const artifacts = {};
+			for (const name of ['main.js', 'manifest.json', 'styles.css']) artifacts[name] = await app.vault.adapter.read(`${directory}/${name}`);
+			return { id: instance.manifest.id, version: instance.manifest.version, artifacts };
+		});
+		const sourceManifest = JSON.parse(await readFile('manifest.json', 'utf8'));
+		if (loaded.id !== sourceManifest.id || loaded.version !== sourceManifest.version) throw new Error('Loaded plugin identity does not match the built manifest.');
+		for (const [name, content] of Object.entries(loaded.artifacts)) {
+			if (createHash('sha256').update(content).digest('hex') !== artifactHashes[name]) throw new Error(`Host artifact differs from the tested build: ${name}`);
+		}
+		console.log('PASS: fixture load directory, plugin identity and SHA-256 of all three built artifacts match.', JSON.stringify(artifactHashes));
+		await page.evaluate(async()=>{await document.fonts.ready;});
 		return { page, vault, directory, errors, close };
 	} catch (error) {
 		await close();

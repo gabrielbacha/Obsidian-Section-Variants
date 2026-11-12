@@ -30,6 +30,8 @@ interface StoredData {
 	backup?: unknown;
 }
 
+export interface StateSnapshot {settings:SectionVariantsSettings;resolve(path:string,block:VariantBlock):ResolvedBlockState;}
+
 export interface StoreChange {
 	scope: 'block' | 'note' | 'settings';
 	path?: string;
@@ -44,6 +46,11 @@ export class StateStore {
 	private readonly listeners = new Set<Listener>();
 	private readonly sessionHidden = new Map<string, Set<string>>();
 	private saveTimer?: number;
+	private dirtyGeneration=0;
+	private savedGeneration=-1;
+	private saveFlight?:Promise<void>;
+	private saveFailureShown=false;
+	private disposed=false;
 
 	constructor(private readonly plugin: Plugin) {}
 
@@ -54,6 +61,12 @@ export class StateStore {
 		if (migration.warning) new Notice(migration.warning, 10000);
 		this.settings = this.data.settings;
 		this.removeRetiredDevicePreferences();
+	}
+
+	/** Immutable export state: no later UI action can alter this snapshot. */
+	snapshot():StateSnapshot{
+		const data=structuredClone(this.data),settings=structuredClone(this.settings),hidden=new Map(Array.from(this.sessionHidden,([key,value])=>[key,new Set(value)]));
+		return{settings,resolve(path,block){let note=data.notes[path];const legacy=block.legacyIdentityKeys.find(key=>note?.blocks[key]);if(note&&!note.blocks[block.identityKey]&&legacy)note={...note,blocks:{...note.blocks,[block.identityKey]:note.blocks[legacy]!}};return resolveBlockState(block,note,settings,hidden.get(sessionKey(path,block.identityKey)));}};
 	}
 
 	subscribe(listener: Listener): () => void {
@@ -247,7 +260,7 @@ export class StateStore {
 
 	saveHidden(path: string, block: VariantBlock): void {
 		const note = this.getNote(path, true) as PersistedNoteState;
-		const hidden = this.sessionHidden.get(sessionKey(path, block.identityKey));
+		const hidden = this.sessionHidden.get(sessionKey(path, block.identityKey)) ?? this.resolve(path,block).hiddenLabels;
 		const state = ensureBlockState(note, block.identityKey);
 		state.savedHiddenLabels = hidden && hidden.size > 0 ? [...hidden] : undefined;
 		pruneBlockState(note, block.identityKey);
@@ -390,9 +403,7 @@ export class StateStore {
 
 	renameNote(oldPath: string, newPath: string): void {
 		const note = this.data.notes[oldPath];
-		if (!note) return;
-		this.data.notes[newPath] = note;
-		delete this.data.notes[oldPath];
+		if (note) { this.data.notes[newPath] = note; delete this.data.notes[oldPath]; }
 		this.moveSessionKeys(oldPath, newPath);
 		this.changed({ scope: 'note', path: newPath });
 	}
@@ -404,20 +415,12 @@ export class StateStore {
 	 */
 	renameFolder(oldPath: string, newPath: string): void {
 		const prefix = `${oldPath}/`;
-		for (const path of Object.keys(this.data.notes)) {
-			if (!path.startsWith(prefix)) continue;
-			const moved = `${newPath}/${path.slice(prefix.length)}`;
-			const note = this.data.notes[path];
-			if (!note) continue;
-			this.data.notes[moved] = note;
-			delete this.data.notes[path];
-			this.moveSessionKeys(path, moved);
-		}
+		const paths=new Set([...Object.keys(this.data.notes),...Array.from(this.sessionHidden.keys(),key=>key.split('\u0000')[0]!) ]);
+		for(const path of paths){if(path.startsWith(prefix))this.renameNote(path,`${newPath}/${path.slice(prefix.length)}`);}
 		this.changed({ scope: 'settings' });
 	}
 
 	deleteNote(path: string): void {
-		if (!this.data.notes[path]) return;
 		delete this.data.notes[path];
 		this.clearSessionKeys(path);
 		this.changed({ scope: 'settings' });
@@ -426,11 +429,8 @@ export class StateStore {
 	/** Drop state for every note inside a deleted folder. */
 	deleteFolder(path: string): void {
 		const prefix = `${path}/`;
-		for (const notePath of Object.keys(this.data.notes)) {
-			if (!notePath.startsWith(prefix)) continue;
-			delete this.data.notes[notePath];
-			this.clearSessionKeys(notePath);
-		}
+		const paths=new Set([...Object.keys(this.data.notes),...Array.from(this.sessionHidden.keys(),key=>key.split('\u0000')[0]!) ]);
+		for(const notePath of paths){if(!notePath.startsWith(prefix))continue;delete this.data.notes[notePath];this.clearSessionKeys(notePath);}
 		this.changed({ scope: 'settings' });
 	}
 
@@ -497,21 +497,30 @@ export class StateStore {
 		this.changed({ scope: 'settings' });
 	}
 
-	async flush(): Promise<void> {
-		if (this.saveTimer !== undefined) {
-			window.clearTimeout(this.saveTimer);
-			this.saveTimer = undefined;
-		}
-		this.data.settings = this.settings;
-		await this.plugin.saveData(this.data);
+	async flush():Promise<void>{
+		if(this.saveTimer!==undefined){window.clearTimeout(this.saveTimer);this.saveTimer=undefined;}
+		if(this.saveFlight){await this.saveFlight;if(this.dirtyGeneration>this.savedGeneration)await this.flush();return;}
+		if(this.dirtyGeneration<=this.savedGeneration)return;
+		this.data.settings=this.settings;
+		const snapshot=structuredClone(this.data),generation=this.dirtyGeneration;
+		this.saveFlight=(async()=>{try{await this.plugin.saveData(snapshot);this.savedGeneration=generation;this.saveFailureShown=false;}catch(error){if(!this.saveFailureShown){this.saveFailureShown=true;new Notice('State could not be saved. Your current choices are kept. Run the retry saving state command when storage is available.',10000);}throw error;}})().finally(()=>{this.saveFlight=undefined;});
+		await this.saveFlight;
+		if(this.dirtyGeneration>this.savedGeneration)await this.flush();
 	}
 
+	/** A source mutation has already committed; a settings failure must not offer that source action again. */
+	async flushAfterCommit():Promise<void>{try{await this.flush();}catch{/* Dirty state and its separate retry remain owned by this store. */}}
+
+	dispose():void{this.disposed=true;if(this.saveTimer!==undefined){window.clearTimeout(this.saveTimer);this.saveTimer=undefined;}this.listeners.clear();void this.flush().catch(()=>{});}
+
 	private changed(change: StoreChange): void {
+		this.dirtyGeneration++;
 		this.emit(change);
+		if(this.disposed){void this.flush().catch(()=>{});return;}
 		if (this.saveTimer !== undefined) window.clearTimeout(this.saveTimer);
 		this.saveTimer = window.setTimeout(() => {
 			this.saveTimer = undefined;
-			void this.flush();
+			void this.flush().catch(()=>{});
 		}, 250);
 	}
 

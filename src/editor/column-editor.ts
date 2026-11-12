@@ -1,3 +1,4 @@
+import {textChange} from '../core/text-diff';
 import { Annotation, EditorSelection, Extension, Prec, StateEffect, Transaction, TransactionSpec } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
 import { App, Component, Editor, editorInfoField, MarkdownFileInfo } from 'obsidian';
@@ -48,8 +49,8 @@ function nativeEditorConstructor(outer: EditorView): NativeEditorConstructor {
 }
 
 export class ColumnEditor {
-	private readonly native: NativeEditor;
-	private readonly owner: ColumnOwner;
+	private readonly native!: NativeEditor;
+	private readonly owner!: ColumnOwner;
 	private variant: VariantSection;
 	private destroyed = false;
 	private forwarding = false;
@@ -66,6 +67,7 @@ export class ColumnEditor {
 		const Native = nativeEditorConstructor(outer);
 		this.variant = variant;
 		this.mount = parent.createDiv({ cls: 'section-variants-column-editor' });
+		try {
 		this.owner = {
 			// Obsidian uses this context to render links and embeds. Only the
 			// outer MarkdownView saves: fragment edits forward to its document.
@@ -95,12 +97,7 @@ export class ColumnEditor {
 		Object.assign(this.owner, { editMode: this.native });
 		this.native.sourceMode = false;
 		this.native.load();
-		try {
-			this.native.set(this.text(), true);
-		} catch (error) {
-			this.destroy();
-			throw error;
-		}
+		this.native.set(this.text(), true);
 		// Handle before Obsidian's editor keymaps, which also consume Escape.
 		const escape = (event: KeyboardEvent): void => {
 			if (event.key !== 'Escape' || event.isComposing) return;
@@ -108,7 +105,7 @@ export class ColumnEditor {
 			if (this.mount.ownerDocument.querySelector('.suggestion-container')) return;
 			event.preventDefault();
 			event.stopPropagation();
-			queueMicrotask(onExit);
+			queueMicrotask(()=>{if(!this.destroyed)onExit();});
 		};
 		this.mount.addEventListener('keydown', escape, true);
 		this.native.register(() => this.mount.removeEventListener('keydown', escape, true));
@@ -149,6 +146,7 @@ export class ColumnEditor {
 				} finally { this.forwarding = false; }
 			}
 		};
+		}catch(error){this.destroy();throw error;}
 	}
 
 	refresh(effect: StateEffect<unknown>): void {
@@ -170,23 +168,19 @@ export class ColumnEditor {
 		const previous = view.state.doc.toString();
 		if (next === previous) return;
 		// Minimal replacement preserves the cursor and composition on external edits.
-		let from = 0;
-		while (from < next.length && from < previous.length && next[from] === previous[from]) from++;
-		let suffix = 0;
-		while (suffix < next.length - from && suffix < previous.length - from && next[next.length - suffix - 1] === previous[previous.length - suffix - 1]) suffix++;
+		const {from,to,insert}=textChange(previous,next);
 		this.syncing = true;
 		try {
-			view.dispatch({ changes: { from, to: previous.length - suffix, insert: next.slice(from, next.length - suffix) }, annotations: Transaction.addToHistory.of(false) });
+			view.dispatch({ changes: { from, to, insert }, annotations: Transaction.addToHistory.of(false) });
 		} finally { this.syncing = false; }
 	}
 
 	destroy(): void {
-		if (this.destroyed) return;
-		this.destroyed = true;
-		this.native.destroy();
-		this.native.unload();
-		if (this.app.workspace.activeEditor === this.owner) this.app.workspace.activeEditor = this.outer.state.field(editorInfoField);
-		this.mount.remove();
+		if(this.destroyed)return;this.destroyed=true;
+		const native=this.native as NativeEditor|undefined;
+		if(native){try{native.destroy();}catch{/* Continue releasing owned resources. */}try{native.unload();}catch{/* Continue releasing owned resources. */}}
+		else for(const element of Array.from(this.mount.querySelectorAll<HTMLElement>('.cm-editor'))){try{EditorView.findFromDOM(element)?.destroy();}catch{/* The owned mount is removed below. */}}
+		try{if(this.owner&&this.app.workspace.activeEditor===this.owner)this.app.workspace.activeEditor=this.outer.state.field(editorInfoField);}finally{this.mount.remove();}
 	}
 
 	private text(): string {

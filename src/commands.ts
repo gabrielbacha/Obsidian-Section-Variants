@@ -1,3 +1,4 @@
+import {unionLabels} from './core/labels';
 import {
 	Editor,
 	FuzzySuggestModal,
@@ -11,6 +12,7 @@ import type SectionVariantsPlugin from './main';
 const VIEW_ORDER: ViewMode[] = ['toggle', 'columns'];
 
 export function registerCommands(plugin: SectionVariantsPlugin): void {
+	plugin.addCommand({id:'retry-save-state',name:'Retry saving state',callback:()=>void plugin.store.flush().catch(()=>{})});
 	plugin.addCommand({
 		id: 'insert-variants-block',
 		name: 'Insert variants block',
@@ -292,19 +294,6 @@ function activeContext(plugin: SectionVariantsPlugin) {
 	const path = view?.file?.path;
 	if (!view || !path) return undefined;
 	return { view, path, parsed: plugin.parse(view.editor.getValue()) };
-}
-
-function unionLabels(blocks: ReturnType<SectionVariantsPlugin['parse']>['blocks']): string[] {
-	const seen = new Set<string>();
-	const labels: string[] = [];
-	for (const block of blocks) {
-		for (const variant of block.variants) {
-			if (seen.has(variant.normalizedLabel)) continue;
-			seen.add(variant.normalizedLabel);
-			labels.push(variant.label);
-		}
-	}
-	return labels;
 }
 
 function validBlocks(parsed: ReturnType<SectionVariantsPlugin['parse']>) {

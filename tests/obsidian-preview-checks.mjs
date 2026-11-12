@@ -28,7 +28,11 @@ export async function verifyNativePreviews(page, directory) {
   await page.waitForFunction(() => app.workspace.getLeavesOfType('markdown').find(l => l.view.file?.path === 'Reference.md').view.previewMode.renderer.sizerEl.querySelector('.internal-embed.is-loaded'));
 
   async function compare(label) {
-    await page.waitForFunction(selector => document.querySelector(selector)?.querySelector('.internal-embed')?.textContent.includes('Embedded native content.'), cellSelector);
+    await page.waitForFunction(selector => {
+      const cell=document.querySelector(selector)?.querySelector('.internal-embed');
+      const reference=app.workspace.getLeavesOfType('markdown').find(leaf=>leaf.view.file?.path==='Reference.md')?.view.previewMode.renderer.sizerEl.querySelector('.internal-embed');
+      return cell?.textContent.includes('Embedded native content.')&&reference?.textContent.includes('Embedded native content.');
+    },cellSelector);
     const metrics = await page.evaluate(cellSelector => {
       const cell = document.querySelector(cellSelector).querySelector('.markdown-preview-sizer');
       const ref = app.workspace.getLeavesOfType('markdown').find(l => l.view.file?.path === 'Reference.md').view.previewMode.renderer.sizerEl;

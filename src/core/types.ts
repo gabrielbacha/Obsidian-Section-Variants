@@ -44,6 +44,8 @@ export interface VariantSection {
 }
 
 export interface VariantBlock {
+	/** Immutable parse source used to prove deferred anonymous mutation targets. */
+	sourceSnapshot?: string;
 	attributes: ContainerAttributes;
 	opening: FenceToken;
 	closing?: FenceToken;

@@ -47,6 +47,8 @@ export async function renderNativePreview(
 	// This is the same HTML boundary Obsidian uses inside Live Preview. Without
 	// it, CodeMirror's break-spaces turns renderer newlines into visible lines.
 	const mount = parent.createDiv({ cls: 'section-variants-preview cm-html-embed' });
+	let ownerDisposed=false;
+	component.register(()=>{ownerDisposed=true;mount.remove();});
 	const Native = MarkdownRenderer as unknown as PreviewConstructor;
 	const prototype = Native.prototype as object | undefined;
 	if (!prototype || !('postProcess' in prototype)) {
@@ -117,6 +119,7 @@ export async function renderNativePreview(
 		engine.set(markdown);
 		refresh();
 	} catch (error) {
+		if(ownerDisposed)return;
 		if (native) component.removeChild(native);
 		mount.empty();
 		parent.appendChild(mount);
@@ -125,10 +128,12 @@ export async function renderNativePreview(
 	}
 
 	async function fallback(): Promise<void> {
+		if(ownerDisposed)return;
 		// Supported static API remains readable on incompatible hosts. No edits
 		// are inferred from this renderer's incomplete source-location metadata.
 		mount.addClass('markdown-rendered');
 		await MarkdownRenderer.render(app, markdown, mount, path, component);
+		if(ownerDisposed)return;
 		for (const checkbox of Array.from(mount.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))) checkbox.disabled = true;
 	}
 }

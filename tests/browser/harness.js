@@ -1,7 +1,14 @@
+import * as dialogs from '../../src/ui/modals';
+import {HtmlExportModal,renderHtmlDocument} from '../../src/export/html-export';
+import {VariantBlockRenderer} from '../../src/ui/block-renderer';
+import {ReadingViewCoordinator} from '../../src/reading/coordinator';
+import {openAttachedMenu,closeAttachedMenus} from '../../src/ui/attached-menu';
+import {closeActionModals} from '../../src/ui/action-modal';
+import {StickyControlManager} from '../../src/ui/sticky-control';
 import { EditorState, StateEffect, StateField } from '@codemirror/state';
 import { EditorView, keymap, Decoration, WidgetType } from '@codemirror/view';
 import { history, historyKeymap, defaultKeymap, undo, redo, undoDepth } from '@codemirror/commands';
-import { editorInfoField, editorLivePreviewField, TestPaneEditor } from 'obsidian';
+import { editorInfoField, editorLivePreviewField, TestPaneEditor, TFile, MarkdownView } from 'obsidian';
 import { createLivePreviewExtension, refreshLivePreviewEditors } from '../../src/editor/live-preview';
 import { parseNote } from '../../src/core/parser';
 import { StateStore } from '../../src/state/store';
@@ -17,7 +24,7 @@ const host = {
 store.subscribe(() => refreshLivePreviewEditors());
 window.nativeExtensions = () => createLivePreviewExtension(host);
 window.h = {
-  views: [], calls, store,
+  views: [], calls, store,host,dialogs,HtmlExportModal,renderHtmlDocument,VariantBlockRenderer,ReadingViewCoordinator,openAttachedMenu,closeAttachedMenus,closeActionModals,StickyControlManager,TFile,MarkdownView,parseNote,
   create(source) {
     const parent = document.body.createDiv({ cls: 'test-pane' });
     const view = new EditorView({ parent, state: EditorState.create({ doc: source, extensions: [

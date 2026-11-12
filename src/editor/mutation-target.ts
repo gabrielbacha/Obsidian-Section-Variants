@@ -3,16 +3,19 @@ export interface MutationEditorCandidate<T> {
 	containsOrigin: boolean;
 	sameDocument: boolean;
 	active: boolean;
+	/** Reading View's hidden editor never owns a source mutation. */
+	mode?: string;
 }
 
 /** Prefer the pane that opened the action, including its pop-out document. */
 export function chooseMutationEditor<T>(
 	candidates: readonly MutationEditorCandidate<T>[],
 ): T | undefined {
+	const live = candidates.filter((candidate) => candidate.mode === undefined || candidate.mode === 'source');
 	return (
-		candidates.find((candidate) => candidate.containsOrigin) ??
-		candidates.find((candidate) => candidate.sameDocument) ??
-		candidates.find((candidate) => candidate.active) ??
-		candidates[0]
+		live.find((candidate) => candidate.containsOrigin) ??
+		live.find((candidate) => candidate.sameDocument) ??
+		live.find((candidate) => candidate.active) ??
+		live[0]
 	)?.editor;
 }

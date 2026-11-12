@@ -23,10 +23,14 @@ export class TestNativeEditor extends Component {
     this.editorEl = parent.createDiv({ cls: 'markdown-source-view mod-cm6 is-live-preview' });
     this.cm = new EditorView({ parent: this.editorEl });
     this.editor = { undo() {}, redo() {} };
+    window.lastNativeView=this.cm;
+    if(window.nativeFailureStage==='constructor')throw new Error('Injected constructor failure');
   }
+  load(){super.load();if(window.nativeFailureStage==='load')throw new Error('Injected load failure');}
   buildLocalExtensions() { return [keymap.of(defaultKeymap)]; }
   getScroll() { return 0; }
   set(source) {
+    if(window.nativeFailureStage==='set')throw new Error('Injected set failure');
     this.cm.setState(EditorState.create({ doc: source, extensions: [
       editorInfoField.init(() => this.owner), editorLivePreviewField,
       this.buildLocalExtensions(), window.nativeExtensions(),
@@ -56,6 +60,7 @@ export class MarkdownRenderer extends Component {
   postProcess() {}
   static async render(_app, source, target) {
     window.renderCount++;
+    if(window.renderDelay)await window.renderDelay;
     const p = target.createEl('p', { text: source.trim() });
     if (source.includes('[link]')) p.createEl('a', { text: 'link', attr: { href: '#example' } });
     if (source.includes('[ ]')) p.createEl('input', { type: 'checkbox' });
@@ -87,3 +92,11 @@ Element.prototype.createEl = function(tag, options = {}) {
 Element.prototype.createDiv = function(options) { return this.createEl('div', options); };
 Element.prototype.createSpan = function(options) { return this.createEl('span', options); };
 window.createDiv = options => { const parent = document.createElement('div'); return parent.createDiv(options); };
+
+export class TFile {constructor(path){this.path=path;}get basename(){return this.path.replace(/.*\//,'').replace(/\.md$/,'');}}
+export function normalizePath(path){return path.replaceAll('\\','/').replace(/^\.\//,'');}
+export class Modal {constructor(app){this.app=app;this.contentEl=document.createElement('div');this.contentEl.className='modal-content';}setTitle(title){this.title=title;}open(){document.body.append(this.contentEl);this.onOpen?.();}close(){this.onClose?.();this.contentEl.remove();}}
+export class AbstractInputSuggest {constructor(app,input){this.app=app;this.inputEl=input;}open(){}close(){}setValue(value){this.inputEl.value=value;this.inputEl.dispatchEvent(new Event('input',{bubbles:true}));}}
+export class Setting {constructor(parent){this.settingEl=parent.createDiv({cls:'setting-item'});this.controlEl=this.settingEl.createDiv();}setName(name){this.settingEl.dataset.name=name;return this;}setDesc(){return this;}addText(callback){const inputEl=this.controlEl.createEl('input');const component={inputEl,setValue(value){inputEl.value=value;return this;},onChange(fn){inputEl.addEventListener('input',()=>fn(inputEl.value));return this;}};callback(component);return this;}addDropdown(callback){const selectEl=this.controlEl.createEl('select');const component={selectEl,addOption(value,text){const option=selectEl.createEl('option',{text});option.value=value;return this;},addOptions(values){for(const [value,text]of Object.entries(values))this.addOption(value,text);return this;},setValue(value){selectEl.value=value;return this;},onChange(fn){selectEl.addEventListener('change',()=>fn(selectEl.value));return this;}};callback(component);return this;}addButton(callback){const buttonEl=this.controlEl.createEl('button');const component={buttonEl,setButtonText(text){buttonEl.textContent=text;return this;},setIcon(){return this;},setTooltip(text){buttonEl.title=text;return this;},setDisabled(value){buttonEl.disabled=value;return this;},setCta(){return this;},setClass(name){buttonEl.classList.add(name);return this;},onClick(fn){buttonEl.addEventListener('click',fn);return this;}};callback(component);return this;}addExtraButton(callback){return this.addButton(callback);}}
+export class Menu {addItem(callback){callback({setTitle(){return this;},setIcon(){return this;},onClick(){return this;}});return this;}showAtMouseEvent(){}}
+window.createEl=(tag,options)=>{const parent=document.createElement('div');return parent.createEl(tag,options);};

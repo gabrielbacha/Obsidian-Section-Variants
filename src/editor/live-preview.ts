@@ -30,6 +30,7 @@ import {
 	setIcon,
 } from 'obsidian';
 import { visibleColumnWidths } from '../core/column-ratios';
+import { navigationForPreview, PreviewNavigationOwner } from './preview-navigation';
 import {
 	normalizeLabel,
 	ParsedNote,
@@ -156,7 +157,14 @@ export function createLivePreviewExtension(
 			let next = value;
 			if (next && transaction.docChanged) {
 				const blockFrom = transaction.changes.mapPos(next.blockFrom, 1, MapMode.TrackAfter);
-				next = blockFrom === null ? null : { ...next, blockFrom };
+				if (blockFrom === null && transaction.isUserEvent('set')) {
+					// Whole-note replacement can delete every old offset. Rebind only
+					// a unique authored ID, never a nearby anonymous block.
+					const oldBlock = transaction.startState.field(parsedField).blocks.find(block => block.opening.from === next!.blockFrom);
+					const id = oldBlock?.attributes.id;
+					const candidates = id ? transaction.state.field(parsedField).blocks.filter(block => block.valid && block.attributes.id === id) : [];
+					next = candidates.length === 1 ? { ...next, blockFrom: candidates[0]!.opening.from } : null;
+				} else next = blockFrom === null ? null : { ...next, blockFrom };
 			}
 			let explicit = false;
 			for (const effect of transaction.effects) {
@@ -178,6 +186,7 @@ export function createLivePreviewExtension(
 			}
 			if (
 				!explicit &&
+				!transaction.isUserEvent('set') &&
 				transaction.selection &&
 				!selectionTouchesRange(
 					transaction.state,
@@ -283,6 +292,7 @@ export function createLivePreviewExtension(
 		private refreshColumn = false;
 		private readonly ownerDocument: Document;
 		private destroyed = false;
+		private readonly navigation: PreviewNavigationOwner;
 		private pointerStart?: PreviewTarget & {
 			x: number;
 			y: number;
@@ -290,6 +300,7 @@ export function createLivePreviewExtension(
 		};
 
 		constructor(private readonly view: EditorView) {
+			this.navigation = new PreviewNavigationOwner(view, () => view.state.field(editorInfoField, false)?.file?.path);
 			this.ownerDocument = view.dom.ownerDocument;
 			if (!view.state.field(editorInfoField, false)?.editor) return;
 			const owner: MarkdownFileInfo & { getViewType?: () => string } = view.state.field(editorInfoField);
@@ -309,6 +320,7 @@ export function createLivePreviewExtension(
 		}
 
 		update(update: ViewUpdate): void {
+			this.navigation.update(update.transactions);
 			this.refreshColumn ||= update.transactions.some(tr => tr.effects.some(effect => effect.is(refreshEffect)));
 			this.scheduleColumnSync();
 		}
@@ -373,6 +385,7 @@ export function createLivePreviewExtension(
 
 		destroy(): void {
 			this.destroyed = true;
+			this.navigation.destroy();
 			this.closeColumn();
 			this.ownerDocument.removeEventListener(
 				'pointerdown',
@@ -869,6 +882,7 @@ class LiveBlockWidget extends WidgetType {
 
 	toDOM(view: EditorView): HTMLElement {
 		const root = createOwnerDocumentDiv(view.dom);
+		const navigation = navigationForPreview(view);
 		const heightKey = this.heightKey;
 		// A rebuilt block renders its previews asynchronously. Hold its last
 		// height until they arrive so the lines below it do not jump up and back.
@@ -897,6 +911,7 @@ class LiveBlockWidget extends WidgetType {
 			// CodeMirror does not observe widget content. Without this, its
 			// height map stays stale until the next scroll, which then jumps.
 			view.requestMeasure();
+			if (navigation) navigation.owner.measure(navigation.navigation);
 		});
 		heightObserver.observe(root);
 		root.addClass(

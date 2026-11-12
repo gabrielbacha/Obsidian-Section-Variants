@@ -6,6 +6,7 @@ import {
 	VariantBlock,
 	VariantSection,
 	ViewMode,
+	ResponsiveMode,
 } from '../core/types';
 
 export type ExportState = 'authored' | 'current';
@@ -15,7 +16,7 @@ export function selectExportVariants(
 	current: ResolvedBlockState,
 	stateMode: ExportState,
 	defaultView: ViewMode,
-): { view: ViewMode; variants: VariantSection[] } {
+): { view: ViewMode; variants: VariantSection[]; responsive: ResponsiveMode; minWidth: string; widths?: string } {
 	const view =
 		stateMode === 'authored'
 			? effectiveAuthoredView(block, defaultView)
@@ -34,5 +35,6 @@ export function selectExportVariants(
 						stateMode === 'authored' ||
 						!current.hiddenLabels.has(variant.normalizedLabel),
 				);
-	return { view, variants };
+	return { view, variants, responsive: stateMode === 'authored' ? block.attributes.responsive ?? 'responsive' : current.responsive,
+		minWidth: stateMode === 'authored' ? block.attributes.minWidth ?? current.minWidth : current.minWidth, widths: stateMode === 'authored' ? block.attributes.widths : current.widths };
 }

@@ -34,7 +34,8 @@ export interface MenuPoint {
 	y: number;
 }
 
-const activeMenus = new WeakMap<Document, () => void>();
+const activeMenus = new Map<Document, () => void>();
+export function closeAttachedMenus():void{for(const close of [...activeMenus.values()])close();}
 
 export function rootMenuPosition(
 	point: MenuPoint,
@@ -62,12 +63,12 @@ export function submenuPosition(
 export function openAttachedMenu(
 	event: MouseEvent,
 	items: readonly AttachedMenuItem[],
-): void {
+): () => void {
 	const origin = event.currentTarget as HTMLElement | null;
 	const doc = origin?.ownerDocument ?? activeDocument;
 	activeMenus.get(doc)?.();
 	const ownerWindow = doc.defaultView;
-	if (!ownerWindow) return;
+	if (!ownerWindow) return () => {};
 	doc.querySelectorAll('.tooltip').forEach((tooltip) => tooltip.remove());
 	const controller = new ownerWindow.AbortController();
 	const root = createMenu(doc, items, controller, true);
@@ -122,6 +123,7 @@ export function openAttachedMenu(
 	);
 	root.onSelect = close;
 	root.focusFirst();
+	return ()=>close(false);
 }
 
 interface MenuHandle {
@@ -210,12 +212,15 @@ function createMenu(
 			input.value = item.input.value;
 			input.placeholder = item.input.placeholder ?? '';
 			input.setAttribute('aria-label', item.input.ariaLabel);
+			let composing=false;
+			input.addEventListener('compositionstart',()=>{composing=true;},{signal:controller.signal});
+			input.addEventListener('compositionend',()=>{composing=false;},{signal:controller.signal});
 			input.addEventListener(
 				'keydown',
 				(event) => {
 					if (event.key === 'Escape') return;
 					event.stopPropagation();
-					if (event.key !== 'Enter') return;
+					if (event.key !== 'Enter' || event.isComposing || composing) return;
 					event.preventDefault();
 					item.input?.onSubmit(input.value);
 					handle.onSelect?.();
@@ -328,7 +333,7 @@ function createMenu(
 				focusRelative(menuItems, index, event.key === 'ArrowDown' ? 1 : -1);
 			} else if (event.key === 'Home' || event.key === 'End') {
 				event.preventDefault();
-				focusRelative(menuItems, event.key === 'Home' ? -1 : 0, 1);
+				focusRelative(menuItems, event.key === 'Home' ? -1 : menuItems.length, event.key === 'Home' ? 1 : -1);
 			} else if (event.key === 'ArrowRight' && index >= 0) {
 				const item = items.filter((candidate) => candidate.label !== '-')[index];
 				if (item?.children) {

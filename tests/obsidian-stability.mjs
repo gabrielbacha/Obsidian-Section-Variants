@@ -54,15 +54,23 @@ try {
 			const line = (node.nodeType === 1 ? node : node.parentElement)?.closest('.cm-line');
 			return line?.isConnected ? line.getBoundingClientRect().top : undefined;
 		};
-		await sleep(60);
+		// Native Markdown decorations arrive after the initial raw source layout.
+		// Begin anchoring checks only when the target is a real rendered heading.
+		let nativeReady = false;
+		for (let attempt = 0; attempt < 100; attempt++) {
+			const { node } = cm.domAtPos(target);
+			const line = (node.nodeType === 1 ? node : node.parentElement)?.closest('.cm-line');
+			if (line?.classList.contains('HyperMD-header-2')) { nativeReady = true; break; }
+			await sleep(20);
+		}
 		const first = lineTop();
 		const samples = [];
 		for (let i = 0; i < 15; i++) { await sleep(100); samples.push(lineTop()); }
 		const moves = samples.filter(top => top !== undefined && first !== undefined).map(top => Math.abs(top - first));
-		return { first, worst: Math.max(0, ...moves), missing: first === undefined };
+		return { first, worst: Math.max(0, ...moves), missing: !nativeReady || first === undefined };
 	});
 	console.log('Open at position:', JSON.stringify(coldOpen));
-	check(!coldOpen.missing && coldOpen.worst <= 2, `a heading stays in place while the note renders (moved ${coldOpen.worst.toFixed(1)}px)`);
+	check(!coldOpen.missing && coldOpen.worst <= 2, `a native heading stays in place while previews render (moved ${coldOpen.worst.toFixed(1)}px)`);
 	const scroll = await page.evaluate(async () => {
 		const cm = app.workspace.getLeavesOfType('markdown').find(leaf => leaf.view.file?.path === 'Long.md').view.editor.cm;
 		const scroller = cm.scrollDOM;
@@ -102,7 +110,8 @@ try {
 	// 2. Toggle blocks: no collapsed lines, and each frame spans its block.
 	await page.evaluate(() => {
 		const editor = app.workspace.getLeavesOfType('markdown').find(leaf => leaf.view.file?.path === 'Long.md').view.editor;
-		const position = editor.offsetToPos(editor.getValue().indexOf(':::: {.variants #toggle-3}'));
+		// Scroll to visible Markdown, not to an atomically hidden fence.
+		const position = editor.offsetToPos(editor.getValue().indexOf('Toggle alpha body 3.'));
 		editor.scrollIntoView({ from: position, to: position }, true);
 	});
 	await page.waitForTimeout(400);
@@ -115,7 +124,7 @@ try {
 		const top = header?.getBoundingClientRect().top;
 		const bottom = end?.getBoundingClientRect().bottom;
 		const frame = frames.find(rect => Math.abs(rect.top - top) < 3);
-		return { collapsed, frames: frames.length, topGap: frame ? frame.top - top : null, bottomGap: frame ? frame.bottom - bottom : null };
+		return { collapsed, top, bottom, headerFound: Boolean(header), endFound: Boolean(end), frames: frames.length, topGap: frame ? frame.top - top : null, bottomGap: frame ? frame.bottom - bottom : null };
 	});
 	console.log('Toggle layout:', JSON.stringify(layout));
 	check(layout.collapsed === 0, 'Toggle blocks leave no collapsed editor lines');

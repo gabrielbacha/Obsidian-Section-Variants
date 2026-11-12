@@ -32,6 +32,7 @@ export async function applyPreviewEdit(
 		.filter((view): view is MarkdownView => view instanceof MarkdownView && view.file?.path === path && view.getMode() === 'source');
 	const editor = chooseMutationEditor(views.map(view => ({
 		editor: view.editor,
+		mode: view.getMode(),
 		containsOrigin: view.containerEl.contains(origin),
 		sameDocument: view.containerEl.ownerDocument === origin.ownerDocument,
 		active: view === host.app.workspace.getActiveViewOfType(MarkdownView),

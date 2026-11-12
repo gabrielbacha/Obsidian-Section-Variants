@@ -1,30 +1,34 @@
-import { App, Modal, Setting } from 'obsidian';
+import {ActionModal} from './action-modal';
+import { App, Setting } from 'obsidian';
 import {
 	normalizeLabel,
 	SerializeOptions,
 	VariantBlock,
 	ViewMode,
 } from '../core/types';
-import { errorMessage } from '../core/errors';
 import { LabelCatalogEntry } from '../core/labels';
 import {
 	parseColumnRatios,
+	validColumnRatios,
+	MIN_COLUMN_RATIO,
+	MAX_COLUMN_RATIO,
 	serializeColumnRatios,
 } from '../core/column-ratios';
 import { LabelInputSuggest } from './label-input-suggest';
 
-export class InsertVariantsModal extends Modal {
+export class InsertVariantsModal extends ActionModal {
 	private name = '';
 	private labels = ['A', 'B'];
 	private defaultIndex = 0;
 	private view: ViewMode = 'toggle';
 	private errorEl?: HTMLElement;
 	private labelSuggests: LabelInputSuggest[] = [];
+	private defaultPicker?:HTMLSelectElement;
 
 	constructor(
 		app: App,
 		private readonly suggestions: readonly LabelCatalogEntry[],
-		private readonly onSubmit: (options: SerializeOptions) => void,
+		private readonly onSubmit: (options: SerializeOptions) => void | Promise<void>,
 	) {
 		super(app);
 	}
@@ -35,6 +39,7 @@ export class InsertVariantsModal extends Modal {
 	}
 
 	onClose(): void {
+		this.closedSubmission();
 		this.clearLabelSuggests();
 		this.contentEl.empty();
 	}
@@ -65,6 +70,7 @@ export class InsertVariantsModal extends Modal {
 		new Setting(this.contentEl)
 			.setName('Default variant')
 			.addDropdown((dropdown) => {
+				this.defaultPicker=dropdown.selectEl;
 				this.labels.forEach((label, index) => {
 					dropdown.addOption(String(index), label || `Variant ${index + 1}`);
 				});
@@ -94,7 +100,7 @@ export class InsertVariantsModal extends Modal {
 				button
 					.setButtonText('Insert')
 					.setCta()
-					.onClick(() => this.submit()),
+					.onClick(() => void this.submit()),
 			);
 	}
 
@@ -104,6 +110,7 @@ export class InsertVariantsModal extends Modal {
 			.addText((text) => {
 				text.setValue(label).onChange((value) => {
 					this.labels[index] = value;
+						const option=this.defaultPicker?.options[index];if(option)option.text=value||`Variant ${index+1}`;
 				});
 				this.labelSuggests.push(
 					new LabelInputSuggest(
@@ -117,6 +124,7 @@ export class InsertVariantsModal extends Modal {
 						),
 						(value) => {
 							this.labels[index] = value;
+						const option=this.defaultPicker?.options[index];if(option)option.text=value||`Variant ${index+1}`;
 						},
 					),
 				);
@@ -128,6 +136,7 @@ export class InsertVariantsModal extends Modal {
 					.setDisabled(this.labels.length <= 2)
 					.onClick(() => {
 						this.labels.splice(index, 1);
+						if(index<this.defaultIndex)this.defaultIndex--;
 						this.defaultIndex = Math.min(
 							this.defaultIndex,
 							this.labels.length - 1,
@@ -137,7 +146,7 @@ export class InsertVariantsModal extends Modal {
 			);
 	}
 
-	private submit(): void {
+	private async submit(): Promise<void> {
 		const labels = this.labels.map((label) => label.trim());
 		const normalized = labels.map(normalizeLabel);
 		if (labels.some((label) => !label)) {
@@ -148,13 +157,12 @@ export class InsertVariantsModal extends Modal {
 			this.showError('Labels must be unique, ignoring case.');
 			return;
 		}
-		this.onSubmit({
+		await this.perform(()=>this.onSubmit({
 			labels,
 			name: this.name.trim() || undefined,
 			defaultLabel: labels[this.defaultIndex],
 			view: this.view,
-		});
-		this.close();
+		}),this.errorEl);
 	}
 
 	private showError(message: string): void {
@@ -167,7 +175,7 @@ export class InsertVariantsModal extends Modal {
 	}
 }
 
-export class ColumnRatiosModal extends Modal {
+export class ColumnRatiosModal extends ActionModal {
 	private ratios: string[];
 	private errorEl?: HTMLElement;
 
@@ -194,8 +202,9 @@ export class ColumnRatiosModal extends Modal {
 				.setDesc('Relative width')
 				.addText((text) => {
 					text.inputEl.type = 'number';
-					text.inputEl.min = '0.1';
-					text.inputEl.step = '0.1';
+					text.inputEl.min = String(MIN_COLUMN_RATIO);
+					text.inputEl.max=String(MAX_COLUMN_RATIO);
+					text.inputEl.step='any';
 					text.setValue(this.ratios[index] ?? '1').onChange((value) => {
 						this.ratios[index] = value;
 					});
@@ -216,25 +225,21 @@ export class ColumnRatiosModal extends Modal {
 	}
 
 	onClose(): void {
+		this.closedSubmission();
 		this.contentEl.empty();
 	}
 
 	private async submit(): Promise<void> {
 		const ratios = this.ratios.map(Number);
-		if (ratios.some((value) => !Number.isFinite(value) || value <= 0)) {
-			this.errorEl?.setText('Every column ratio must be greater than zero.');
+		if (!validColumnRatios(ratios)) {
+			this.errorEl?.setText(`Every column ratio must be between ${MIN_COLUMN_RATIO} and ${MAX_COLUMN_RATIO}.`);
 			return;
 		}
-		try {
-			await this.onSubmit(serializeColumnRatios(ratios));
-			this.close();
-		} catch (error) {
-			this.errorEl?.setText(errorMessage(error));
-		}
+		await this.perform(()=>this.onSubmit(serializeColumnRatios(ratios)),this.errorEl);
 	}
 }
 
-export class RenameVariantModal extends Modal {
+export class RenameVariantModal extends ActionModal {
 	private newLabel: string;
 	private acrossNote = false;
 	private errorEl?: HTMLElement;
@@ -288,20 +293,11 @@ export class RenameVariantModal extends Modal {
 	}
 
 	private async submit(): Promise<void> {
-		try {
-			await this.onSubmit(
-				this.oldLabel,
-				this.newLabel.trim(),
-				this.acrossNote,
-			);
-			this.close();
-		} catch (error) {
-			this.errorEl?.setText(errorMessage(error));
-		}
+		await this.perform(()=>this.onSubmit(this.oldLabel,this.newLabel.trim(),this.acrossNote),this.errorEl);
 	}
 }
 
-export class AddVariantModal extends Modal {
+export class AddVariantModal extends ActionModal {
 	private label: string;
 	private errorEl?: HTMLElement;
 	private labelSuggest?: LabelInputSuggest;
@@ -351,6 +347,7 @@ export class AddVariantModal extends Modal {
 	}
 
 	onClose(): void {
+		this.closedSubmission();
 		this.labelSuggest?.destroy();
 		this.contentEl.empty();
 	}
@@ -369,16 +366,11 @@ export class AddVariantModal extends Modal {
 			this.errorEl?.setText('That label already exists in this box.');
 			return;
 		}
-		try {
-			await this.onSubmit(label);
-			this.close();
-		} catch (error) {
-			this.errorEl?.setText(errorMessage(error));
-		}
+		await this.perform(()=>this.onSubmit(label),this.errorEl);
 	}
 }
 
-export class DeleteVariantConfirmationModal extends Modal {
+export class DeleteVariantConfirmationModal extends ActionModal {
 	private errorEl?: HTMLElement;
 
 	constructor(
@@ -410,20 +402,16 @@ export class DeleteVariantConfirmationModal extends Modal {
 	}
 
 	onClose(): void {
+		this.closedSubmission();
 		this.contentEl.empty();
 	}
 
 	private async confirm(): Promise<void> {
-		try {
-			await this.onConfirm();
-			this.close();
-		} catch (error) {
-			this.errorEl?.setText(errorMessage(error));
-		}
+		await this.perform(()=>this.onConfirm(),this.errorEl);
 	}
 }
 
-export class DeleteBlockConfirmationModal extends Modal {
+export class DeleteBlockConfirmationModal extends ActionModal {
 	private errorEl?: HTMLElement;
 
 	constructor(
@@ -455,16 +443,12 @@ export class DeleteBlockConfirmationModal extends Modal {
 	}
 
 	onClose(): void {
+		this.closedSubmission();
 		this.contentEl.empty();
 	}
 
 	private async confirm(): Promise<void> {
-		try {
-			await this.onConfirm();
-			this.close();
-		} catch (error) {
-			this.errorEl?.setText(errorMessage(error));
-		}
+		await this.perform(()=>this.onConfirm(),this.errorEl);
 	}
 }
 

@@ -6,7 +6,7 @@ Run the automated release gate first:
 npm run check
 ```
 
-Also run `npm run test:stability` (optionally with `SECTION_VARIANTS_PLUGINS_DIR`) and `npm run test:obsidian` with `OBSIDIAN_EXECUTABLE`, optionally `OBSIDIAN_ASAR` and `OBSIDIAN_THEME_DIR`, after building. Browser tests use a host-contract double; they cannot establish actual Obsidian theme parity. The isolated desktop test compares native DOM and computed styles, tight-list item distances, and callout title-to-content gaps, including theme changes without reopening. It preserves Obsidian's own Live Preview callout outer-margin rule rather than adding a plugin override. Mobile, pop-out windows, and IME still require device/manual checks.
+Also run `npm run test:stability` (optionally with `SECTION_VARIANTS_PLUGINS_DIR`) and `npm run test:obsidian` with `OBSIDIAN_EXECUTABLE`, optionally `OBSIDIAN_ASAR` and `OBSIDIAN_THEME_DIR`, after building. Browser tests use a host-contract double; they cannot establish actual Obsidian theme parity. Before UI actions, the isolated desktop test proves the executable, generated native profile and fixture vault. It then checks the loaded plugin ID, fixture load directory and SHA-256 of `main.js`, `manifest.json` and `styles.css` against the built source. The isolated desktop test compares native DOM and computed styles, tight-list item distances, and callout title-to-content gaps, including theme changes without reopening. It preserves Obsidian's own Live Preview callout outer-margin rule rather than adding a plugin override. Mobile, pop-out windows, and IME still require device/manual checks.
 
 For manual testing, reload Obsidian after building and create a note containing:
 
@@ -51,8 +51,8 @@ Verify on desktop and mobile:
 - Reading view switches one block, shift-select applies matching labels, and unmatched blocks stay unchanged.
 - Split a block across Reading View render chunks, scroll until a later virtualized chunk appears, and verify it mounts only after both fences are available. Repeated identical `:::` text and incomplete mappings must remain fail-visible. Repeat in a pop-out window.
 - Toggle, responsive columns, stacking, scrolling, column hiding, saved visibility, and default indicators work. Legacy `view="auto"` resolves to Columns but is absent from new UI choices.
-- Every valid block has a subtle theme-aware border. Only the layers marker remains at rest; hover or focus reveals the quiet label selector, while view modes and advanced actions remain in the marker menu.
-- The top-right sticky control follows the same marker/reveal pattern, reports mixed and default-difference state through its marker and tooltip, and synchronizes multiple panes of the same note.
+- Every valid block has a subtle theme-aware border. Only the layers marker remains at rest; hover or focus reveals the quiet label selector, while advanced block actions remain in the marker menu.
+- The bottom-right note control stays above the native status bar, including pop-out windows. Its revealed label/view segments and narrow-layout button synchronize panes of the same note; its marker menu contains only Hide note control.
 - Toggle leaves selected content in the owning Obsidian editor. Clicking a Columns preview mounts a native Live Preview editor inside that exact column. Other visible variants, headers, column widths, and the comparison grid remain in place. There is no full-width transition or **Editing below** placeholder.
 - Clicking another column switches editing immediately. Clicking outside or pressing `Escape` restores that column's preview; links, checkboxes, buttons, and menus keep their own actions.
 - At the first and final positions inside the active native variant, ordinary typing remains inside that variant and preserves its closing fence.
@@ -72,3 +72,15 @@ Verify on desktop and mobile:
 - On mobile, label, marker, column edit, and column hide controls have 44px targets; on pointer-capable devices the compact hover/focus behavior remains unchanged.
 - Native PDF uses authored defaults. HTML export produces authored-default and current-state files without overwriting an existing file.
 - Disabling and re-enabling the plugin does not leave toolbars, sticky controls, listeners, or editor decorations behind.
+
+## Failure and race checks
+
+- Remove or reorder a same-label anonymous box while its delete dialog is open. Confirmation cancels; it does not target its neighbor. Stable-ID movement remains supported.
+- Delay each modal callback and submit twice. Exactly one source operation occurs. A later state-save failure keeps dirty choices for the separate Retry saving state command.
+- Restore saved hidden columns, save without toggling, and restart: visibility stays the same. Session-only state follows note/folder rename and is cleared on deletion.
+- Delay a read or native preview, then unload: no child, DOM or listener is added. Menus and modal owners close.
+- Reject a structural editor transaction: no block-state migration or success message occurs. Normal edits retain one undo step.
+- Cancel insertion from `/variants` or `::: variants`: the exact trigger remains. Edit the source or change the bound note while insertion is open: commit cancels with a clear message.
+- Export during delayed autosave: capture the bound editor at confirmation and freeze its UI state. Later edits or note switching do not change that export.
+- Home/End skip disabled items and focus the first/last item. An IME candidate-confirming Enter does not submit a box name.
+- Unowned preamble, between-variant text and trailing text, and invalid nested blocks remain fully visible and retained in both export modes.

@@ -1,3 +1,6 @@
+import {closeActionModals} from './ui/action-modal';
+import {captureInsertion,commitInsertion} from './editor/insertion-target';
+import {closeAttachedMenus} from './ui/attached-menu';
 import {
 	Editor,
 	EditorPosition,
@@ -87,8 +90,8 @@ export default class SectionVariantsPlugin
 		);
 		this.registerEditorExtension(createLivePreviewExtension(this));
 		this.registerEditorSuggest(
-			new VariantsEditorSuggest(this, (editor, position) =>
-				this.openInsertModal(editor, position),
+			new VariantsEditorSuggest(this, (editor, position,end) =>
+				this.openInsertModal(editor, position,end),
 			),
 		);
 		registerCommands(this);
@@ -139,6 +142,8 @@ export default class SectionVariantsPlugin
 	}
 
 	onunload(): void {
+		closeAttachedMenus();
+		closeActionModals();
 		if (this.stickyRefreshTimer !== undefined) {
 			window.clearTimeout(this.stickyRefreshTimer);
 			this.stickyRefreshTimer = undefined;
@@ -149,7 +154,8 @@ export default class SectionVariantsPlugin
 		this.vaultRefreshTimers.clear();
 		this.vaultRefreshGenerations.clear();
 		this.stickyControls?.destroy();
-		void this.store?.flush();
+		this.readingCoordinator?.dispose();
+		this.store?.dispose();
 	}
 
 	parse(source: string): ParsedNote {
@@ -182,22 +188,11 @@ export default class SectionVariantsPlugin
 		this.stickyControls?.refresh(path);
 	}
 
-	openInsertModal(editor: Editor, position: EditorPosition): void {
-		new InsertVariantsModal(
-			this.app,
-			collectLabelCatalog(this.parse(editor.getValue()).blocks),
-			(options) => {
-				try {
-					const serialized = serializeVariantsBlock(options);
-					editor.replaceRange(serialized.markdown, position);
-					const insertionOffset =
-						editor.posToOffset(position) + serialized.firstContentOffset;
-					editor.setCursor(editor.offsetToPos(insertionOffset));
-				} catch (error) {
-					new Notice(errorMessage(error));
-				}
-			},
-		).open();
+	openInsertModal(editor:Editor,position:EditorPosition,end?:EditorPosition):void{
+		const currentPath=()=>{const view=this.app.workspace.getLeavesOfType('markdown').map(leaf=>leaf.view).find((view):view is MarkdownView=>view instanceof MarkdownView&&view.editor===editor);return view?.file?.path??(this.app.workspace.activeEditor?.editor===editor?this.app.workspace.activeEditor.file?.path:undefined);};
+		const path=currentPath();if(!path){new Notice('Open a Markdown note before inserting variants.');return;}
+		const target=captureInsertion(editor,path,position,end);
+		new InsertVariantsModal(this.app,collectLabelCatalog(this.parse(target.source).blocks),options=>{const serialized=serializeVariantsBlock(options);commitInsertion(editor,currentPath(),target,serialized.markdown,serialized.firstContentOffset);}).open();
 	}
 
 	setBlockName(
@@ -287,7 +282,7 @@ export default class SectionVariantsPlugin
 		// transaction returns. Re-dispatch once on the next turn so decorations
 		// cannot retain a widget built from the pre-mutation document.
 		this.scheduleViewRefresh(path);
-		await this.store.flush();
+		await this.store.flushAfterCommit();
 	}
 
 	openAddVariant(path: string, block: VariantBlock, origin?: HTMLElement): void {
@@ -325,7 +320,7 @@ export default class SectionVariantsPlugin
 				);
 				this.store.rekeyBlockState(path, result.before, result.after);
 				this.refreshAfterSourceMutation(path, result.source);
-				await this.store.flush();
+				await this.store.flushAfterCommit();
 				new Notice(`Added ${result.label}.`);
 			}).open();
 		} catch (error) {
@@ -355,7 +350,7 @@ export default class SectionVariantsPlugin
 				result.label,
 			);
 			this.refreshAfterSourceMutation(path, result.source);
-			await this.store.flush();
+			await this.store.flushAfterCommit();
 			new Notice(`Deleted ${result.label}.`);
 		}).open();
 	}
@@ -379,7 +374,7 @@ export default class SectionVariantsPlugin
 				this.store.migrateDeletedBlocks(path, result.removed, result.mappings);
 				this.refreshAfterSourceMutation(path, result.source);
 				this.scheduleViewRefresh(path);
-				await this.store.flush();
+				await this.store.flushAfterCommit();
 				new Notice('Deleted variants box.');
 			},
 		).open();
@@ -413,7 +408,7 @@ export default class SectionVariantsPlugin
 					result.acrossNote,
 				);
 				this.refreshAfterSourceMutation(path, result.source);
-				await this.store.flush();
+				await this.store.flushAfterCommit();
 			},
 		).open();
 	}
@@ -435,7 +430,7 @@ export default class SectionVariantsPlugin
 			);
 			this.store.rekeyBlockState(path, result.before, result.after);
 			this.refreshAfterSourceMutation(path, result.source);
-			await this.store.flush();
+			await this.store.flushAfterCommit();
 			return result.after;
 		} catch (error) {
 			new Notice(errorMessage(error));
@@ -454,7 +449,7 @@ export default class SectionVariantsPlugin
 			);
 			this.store.rekeyBlockState(path, result.before, result.after);
 			this.refreshAfterSourceMutation(path, result.source);
-			await this.store.flush();
+			await this.store.flushAfterCommit();
 			new Notice(`Added block ID ^${result.id}.`);
 		} catch (error) {
 			new Notice(errorMessage(error));
@@ -483,7 +478,8 @@ export default class SectionVariantsPlugin
 			new Notice('Open a Markdown note before exporting.');
 			return;
 		}
-		new HtmlExportModal(this, view.file).open();
+		const path=view.file.path;
+		new HtmlExportModal(this, view.file,()=>{if(view.file?.path!==path)throw new Error('The export note changed. Open the export dialog again.');return view.editor.getValue();}).open();
 	}
 
 	private parseFresh(source: string): ParsedNote {
@@ -502,6 +498,7 @@ export default class SectionVariantsPlugin
 		return chooseMutationEditor(
 			views.map((view) => ({
 				editor: view.editor,
+				mode: view.getMode(),
 				containsOrigin: origin ? view.containerEl.contains(origin) : false,
 				sameDocument: origin
 					? view.containerEl.ownerDocument === origin.ownerDocument

@@ -52,13 +52,14 @@ try {
 		};
 	});
 	if (!gutterAlignment.gutterHidden || Math.abs(gutterAlignment.textOffset) > 1) throw new Error('Column gutter shifted text: ' + JSON.stringify(gutterAlignment));
-	const outerGutter = await page.locator('.cm-editor').first().locator('.cm-gutters').first().evaluate(el => getComputedStyle(el).display);
+	const outerGutter = await page.evaluate(() => {const view=app.workspace.getLeavesOfType('markdown').find(leaf=>leaf.view.file?.path==='Verification.md').view;const editor=view.editor.cm?.dom ?? view.contentEl.querySelector('.markdown-source-view > .cm-editor');const gutter=editor?.querySelector('.cm-gutters');return gutter ? getComputedStyle(gutter).display : 'absent';});
 	if (outerGutter === 'none') throw new Error('The main note gutter was hidden.');
 	if (!await second.locator('h3').isVisible()) throw new Error('Sibling preview disappeared.');
 	const after = await geometry();
 	if (before.some((rect, i) => Math.abs(rect.left - after[i].left) > 1 || Math.abs(rect.width - after[i].width) > 1)) throw new Error('Activation changed column geometry.');
 	await page.screenshot({ path: path.join(directory, 'in-column.png') });
-	await page.keyboard.type('CHECK');
+	await first.locator('.section-variants-column-editor .cm-content').pressSequentially('CHECK');
+	await page.waitForFunction(() => app.workspace.getLeavesOfType('markdown').find(leaf => leaf.view.file?.path === 'Verification.md').view.editor.getValue().includes('CHECK')).catch(async error => {console.error('Generated typing state:',await page.evaluate(()=>({focused:document.activeElement?.outerHTML,active:app.workspace.activeEditor?.editor?.getValue?.(),owner:app.workspace.getLeavesOfType('markdown').find(leaf=>leaf.view.file?.path==='Verification.md').view.editor.getValue()})));throw error;});
 	const edited = await page.evaluate(() => app.workspace.getLeavesOfType('markdown').find(leaf => leaf.view.file?.path === 'Verification.md').view.editor.getValue());
 	if (!edited.includes('CHECK') || !edited.includes('Beta comparison')) throw new Error('Typing did not update the note safely.');
 	await page.keyboard.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z');
@@ -84,33 +85,37 @@ try {
 	await second.locator('.section-variants-column-editor .cm-hmd-internal-link').first().waitFor({ state: 'attached' });
 	await second.locator('.section-variants-column-editor .internal-embed.is-loaded').first().waitFor({ state: 'attached' });
 	await page.keyboard.press('Escape');
+	await page.locator('.section-variants-column-editor').waitFor({state:'detached'});
 	const beforeIdle = await readFile(path.join(vault, 'Verification.md'), 'utf8');
 	const idleExternal = beforeIdle.replace('Alpha', 'Alpha changed while idle');
 	await writeFile(path.join(vault, 'Verification.md'), idleExternal);
 	await page.waitForFunction(expected => app.workspace.getLeavesOfType('markdown').find(leaf => leaf.view.file?.path === 'Verification.md').view.editor.getValue() === expected, idleExternal);
 	await page.waitForTimeout(250);
 	const beforeConflict = await readFile(path.join(vault, 'Verification.md'), 'utf8');
-	await page.evaluate(() => {
-		const view = app.workspace.getLeavesOfType('markdown').find(leaf => leaf.view.file?.path === 'Verification.md').view;
-		window.originalConflictSave = view.save;
-		view.save = async () => {};
-		view.editor.replaceRange('LOCAL UNSAVED\n', { line: 0, ch: 0 });
-	});
+	const controlSource = beforeConflict.replace(/^:{3,}.*$/gmu, '');
+	await page.evaluate(async controlSource => {
+		await app.vault.create('Merge control.md', controlSource);
+		const control = app.workspace.getLeaf('split'); await control.openFile(app.vault.getFileByPath('Merge control.md'));
+		await control.setViewState({type:'markdown',state:{file:'Merge control.md',mode:'source',source:false}});
+		window.conflictViews = app.workspace.getLeavesOfType('markdown').filter(leaf=>['Verification.md','Merge control.md'].includes(leaf.view.file?.path)).map(leaf=>({view:leaf.view,save:leaf.view.save,requestSave:leaf.view.requestSave}));
+		window.originalConflictVaultModify = app.vault.modify;
+		app.vault.modify = async (file, data, options) => {if(['Verification.md','Merge control.md'].includes(file.path) && data.startsWith('LOCAL UNSAVED')) return; return window.originalConflictVaultModify.call(app.vault,file,data,options);};
+		for(const {view} of window.conflictViews){view.requestSave.cancel?.();view.requestSave=()=>{};view.save=async()=>{};view.editor.replaceRange('LOCAL UNSAVED\n',{line:0,ch:0});}
+	}, controlSource);
 	const conflictExternal = beforeConflict.replace('Alpha changed while idle', 'Alpha changed again by agent');
 	await writeFile(path.join(vault, 'Verification.md'), conflictExternal);
-	await page.evaluate(() => app.vault.trigger('modify', app.vault.getFileByPath('Verification.md')));
-	// Obsidian owns this case. It must behave exactly as for an ordinary note:
-	// its merge keeps the unsaved local line and applies the external change.
-	await page.waitForFunction(() => {
-		const value = app.workspace.getLeavesOfType('markdown').find(leaf => leaf.view.file?.path === 'Verification.md').view.editor.getValue();
-		return value.includes('LOCAL UNSAVED') && value.includes('Alpha changed again by agent');
-	});
-	await page.evaluate(() => { const view = app.workspace.getLeavesOfType('markdown').find(leaf => leaf.view.file?.path === 'Verification.md').view; view.save = window.originalConflictSave; });
-	if ((await conflictFolderEntries()).length) throw new Error('Section Variants created a conflict copy instead of leaving the merge to Obsidian.');
+	await writeFile(path.join(vault, 'Merge control.md'), controlSource.replace('Alpha changed while idle', 'Alpha changed again by agent'));
+	// Compare the host's native reconciliation with an ordinary note. The
+	// plugin must not add its own merge or change what the current host keeps.
+	await page.waitForFunction(()=>window.conflictViews.every(({view})=>view.editor.getValue().includes('Alpha changed again by agent')));
+	const nativeMerge = await page.evaluate(()=>window.conflictViews.map(({view})=>({file:view.file.path,retainedLocal:view.editor.getValue().includes('LOCAL UNSAVED')})));
+	if(nativeMerge[0].retainedLocal!==nativeMerge[1].retainedLocal)throw new Error('Variant reconciliation differs from ordinary native Markdown: '+JSON.stringify(nativeMerge));
+	await page.evaluate(()=>{app.vault.modify=window.originalConflictVaultModify;for(const {view,save,requestSave} of window.conflictViews){view.save=save;view.requestSave=requestSave;}});
+	if ((await conflictFolderEntries()).length) throw new Error('Section Variants created a separate conflict copy.');
 	await page.evaluate(async () => { await app.workspace.getLeavesOfType('markdown').find(leaf => leaf.view.file?.path === 'Verification.md').view.save(); });
 	const merged = await readFile(path.join(vault, 'Verification.md'), 'utf8');
-	if (!merged.includes('LOCAL UNSAVED') || !merged.includes('Alpha changed again by agent')) throw new Error('The merged note was not saved: ' + merged);
-	console.log('PASS: concurrent local and external edits use Obsidian\'s own merge, with no plugin copies.');
+	if (!merged.includes('Alpha changed again by agent') || merged.includes('LOCAL UNSAVED')!==nativeMerge[0].retainedLocal) throw new Error('The native reconciled note was not saved.');
+	console.log('PASS: concurrent edits match ordinary native Markdown, with no plugin copies.',JSON.stringify(nativeMerge));
 	const splitBase = merged;
 	await page.evaluate(async () => {
 		const file = app.vault.getFileByPath('Verification.md');

@@ -1,3 +1,4 @@
+import {ResolvedBlockState} from '../core/state-model';
 import {
 	Component,
 	MarkdownRenderChild,
@@ -33,6 +34,11 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 	private readonly nestedRenderers: VariantBlockRenderer[] = [];
 	private controls?: { rebind(block: VariantBlock): void };
 	private deferredRender = false;
+	private disposed=false;
+	private renderedSource?:string;
+	private content?:HTMLElement;
+	private emptyMessage?:HTMLElement;
+	private readonly panels=new Map<string,HTMLElement>();
 
 	constructor(
 		private readonly host: SectionVariantsHost,
@@ -46,13 +52,14 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 	}
 
 	onload(): void {
+		this.disposed=false;
 		this.unsubscribe = this.host.store.subscribe((change) => {
-			if (change.scope === 'settings') void this.render();
+			if (change.scope === 'settings') this.requestRender();
 			else if (
 				change.path === this.sourcePath &&
 				(change.scope === 'note' || change.blockKey === this.block.identityKey)
 			) {
-				void this.render();
+				this.requestRender();
 			}
 		});
 		this.resizeObserver = new ResizeObserver(() => {
@@ -67,27 +74,29 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 			}
 		});
 		this.resizeObserver.observe(this.containerEl);
-		void this.render();
+		this.requestRender();
 	}
 
 	onunload(): void {
+		this.disposed=true;this.renderVersion++;
 		this.unsubscribe?.();
 		this.resizeObserver?.disconnect();
 		this.clearRenderComponent();
+		this.containerEl.empty();
 		this.onDispose?.();
 	}
 
 	rebind(source: string, blocks: readonly VariantBlock[], preserveEditor = false): void {
 		const previousBlocks = this.host.parse(this.source).blocks;
 		const next = findReboundBlock(previousBlocks, this.block, blocks);
-		if (!next?.valid) return;
+		if (!next) return;
 		const unchanged = this.source.slice(this.block.range.from, this.block.range.to) === source.slice(next.range.from, next.range.to);
 		this.source = source;
 		this.block = next;
 		const editing = preserveEditor && Boolean(this.containerEl.querySelector('.section-variants-column-editor'));
 		if ((!unchanged || this.deferredRender) && !editing) {
 			this.deferredRender = false;
-			void this.render();
+			this.requestRender();
 			return;
 		}
 		if (!unchanged) this.deferredRender = true;
@@ -101,7 +110,12 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 		for (const renderer of this.nestedRenderers) renderer.rebind(source, blocks, preserveEditor);
 	}
 
+	private requestRender():void{void this.render().catch(error=>{if(!this.disposed)new Notice(error instanceof Error?error.message:'Section Variants rendering failed.');});}
+
 	private async render(): Promise<void> {
+		if(this.disposed)return;
+		const signature=String(this.block.valid)+this.source.slice(this.block.range.from,this.block.range.to);
+		if(this.renderedSource===signature&&this.content&&this.renderComponent){this.updateState(this.host.store.resolve(this.sourcePath,this.block));return;}
 		const version = ++this.renderVersion;
 		this.clearRenderComponent();
 		this.containerEl.empty();
@@ -116,6 +130,8 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 			this.host.store.settings.defaultView,
 		);
 
+		if(!this.block.valid){this.containerEl.createDiv({cls:'section-variants-warning',text:this.block.diagnostics.find(diagnostic=>diagnostic.severity==='error')?.message??'Invalid variants block; all source remains visible.'});this.containerEl.createEl('pre').createEl('code',{text:this.source.slice(this.block.range.from,this.block.range.to)});return;}
+		this.renderedSource=signature;
 		const component = new Component();
 		this.renderComponent = this.addChild(component);
 		const state = this.host.store.resolve(this.sourcePath, this.block);
@@ -125,6 +141,7 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 		const content = this.containerEl.createDiv({
 			cls: `section-variants-content section-variants-view-${mode}${this.block.attributes.name ? ' has-block-name' : ''}`,
 		});
+		this.content=content;
 		if (this.block.attributes.name) {
 			content.createDiv({
 				cls: 'section-variants-block-name',
@@ -149,9 +166,10 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 		let visibleCount = 0;
 
 		for (const variant of variants) {
-			if (version !== this.renderVersion) return;
+			if (this.disposed || version !== this.renderVersion) return;
 			const panel = content.createDiv({ cls: 'section-variants-panel' });
 			panel.dataset.label = variant.label;
+			this.panels.set(variant.normalizedLabel,panel);
 			panel.dataset.blockFrom = String(this.block.opening.from);
 			const selected =
 				variant.normalizedLabel === normalizeLabel(state.selectedLabel);
@@ -171,23 +189,17 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 				parent: panel,
 				source: this.source,
 				variant,
-				onHide:
-					mode === 'columns'
-						? () => {
-								this.host.store.toggleHidden(
-									this.sourcePath,
-									this.block,
-									variant.label,
-								);
-							}
-						: undefined,
+				onHide:()=>this.host.store.toggleHidden(this.sourcePath,this.block,variant.label),
 			}));
+			this.headers.get(variant.normalizedLabel)?.setHideVisible(mode==='columns');
 			const body = panel.createDiv({ cls: 'section-variants-prose' });
-			await this.renderVariantContent(variant, body, component);
+			await this.renderVariantContent(variant, body, component,version);
+			if(this.disposed||version!==this.renderVersion)return;
 		}
 
 		if (visibleCount === 0) {
 			const empty = content.createDiv({ cls: 'section-variants-empty' });
+			this.emptyMessage=empty;
 			setIcon(empty.createSpan(), 'layers');
 			empty.createSpan({ text: 'All columns are hidden.' });
 			const restore = empty.createEl('button', {
@@ -203,10 +215,27 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 			syncColumnGrid(content, this.columnWidths, state.responsive, visibleCount);
 			syncColumnSeparators(content);
 		}
+		this.updateState(this.host.store.resolve(this.sourcePath,this.block));
+	}
+
+	private updateState(state:ResolvedBlockState):void{
+		if(this.disposed||!this.content)return;
+		const mode=state.view,content=this.content;
+		this.containerEl.querySelector(':scope > .section-variants-toolbar')?.remove();this.renderToolbar(mode);
+		this.containerEl.dataset.currentView=mode;
+		content.toggleClass('section-variants-view-columns',mode==='columns');content.toggleClass('section-variants-view-toggle',mode==='toggle');
+		content.dataset.responsive=state.responsive;content.style.setProperty('--section-variants-min-width',state.minWidth);
+		let count=0;
+		for(const variant of this.block.variants){const panel=this.panels.get(variant.normalizedLabel);if(!panel)continue;const selected=variant.normalizedLabel===normalizeLabel(state.selectedLabel),hidden=state.hiddenLabels.has(variant.normalizedLabel);panel.toggleClass('is-inactive',mode==='toggle'&&!selected);panel.toggleClass('is-hidden-column',mode==='columns'&&hidden);this.headers.get(variant.normalizedLabel)?.setHideVisible(mode==='columns');if(mode==='toggle'?selected:!hidden)count++;}
+		this.columnsContent=mode==='columns'?content:undefined;this.visibleColumnCount=count;this.columnResponsive=state.responsive;
+		this.columnWidths=visibleColumnWidths(state.widths,this.block.variants.length,this.block.variants.flatMap((variant,index)=>state.hiddenLabels.has(variant.normalizedLabel)?[]:[index]));
+		if(mode==='columns'){syncColumnGrid(content,this.columnWidths,state.responsive,count);syncColumnSeparators(content);}
+		if(count>0){this.emptyMessage?.remove();this.emptyMessage=undefined;}else if(!this.emptyMessage){const empty=content.createDiv({cls:'section-variants-empty',text:'All columns are hidden.'});const restore=empty.createEl('button',{type:'button',text:'Restore columns'});restore.addEventListener('click',()=>this.host.store.restoreColumns(this.sourcePath,this.block));this.emptyMessage=empty;}
 	}
 
 	private renderToolbar(mode: 'toggle' | 'columns'): void {
 		const toolbar = this.containerEl.createDiv({ cls: 'section-variants-toolbar' });
+		this.content?.before(toolbar);
 		toolbar.setAttribute('role', 'toolbar');
 		toolbar.setAttribute('aria-label', 'Section variants');
 		this.controls = createBlockControls({
@@ -237,6 +266,7 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 		variant: VariantSection,
 		target: HTMLElement,
 		component: Component,
+		version:number,
 	): Promise<void> {
 		let cursor = variant.content.from;
 		let index = 0;
@@ -244,6 +274,7 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 			(left, right) => left.range.from - right.range.from,
 		);
 		for (const child of children) {
+			if(this.disposed||version!==this.renderVersion)return;
 			if (child.range.from > cursor) {
 				await this.renderMarkdown(
 					this.source.slice(cursor, child.range.from),
@@ -253,6 +284,7 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 					index,
 				);
 			}
+			if(this.disposed||version!==this.renderVersion)return;
 			const nested = target.createDiv({ cls: 'section-variants-nested' });
 			const renderer = new VariantBlockRenderer(
 				this.host,
@@ -296,6 +328,7 @@ export class VariantBlockRenderer extends MarkdownRenderChild {
 	}
 
 	private clearRenderComponent(): void {
+		this.renderedSource=undefined;this.content=undefined;this.emptyMessage=undefined;this.panels.clear();
 		this.headers.clear();
 		this.nestedRenderers.length = 0;
 		this.controls = undefined;

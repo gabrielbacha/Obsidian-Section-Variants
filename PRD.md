@@ -1,3 +1,5 @@
+> Historical design reference. Some editor and control designs in this document were replaced. The current acceptance specification is [TESTING.md](TESTING.md); historical statements here do not define the release gate.
+
 # PRD: Section Variants for Obsidian
 
 ## 1. Product

@@ -82,6 +82,7 @@ export class StickyControlManager {
 			blocks.map((block) => [block, this.host.store.resolve(path, block)]),
 		);
 		const signature = JSON.stringify([
+			path,
 			blocks.map((block) => {
 				const state = states.get(block);
 				return [
@@ -100,7 +101,7 @@ export class StickyControlManager {
 		if (resource.signature === signature) return;
 		resource.signature = signature;
 		// Actions parse at click time, so a skipped render never holds stale offsets.
-		const current = () => this.host.parse(view.editor.getValue());
+		const current = () => {if(view.file?.path!==path)throw new Error('The note changed. Open its current note controls again.');return this.host.parse(view.editor.getValue());};
 		control.empty();
 		control.setAttribute('role', 'toolbar');
 		control.setAttribute('aria-label', 'Note-wide section variants');
@@ -261,7 +262,7 @@ export class StickyControlManager {
 		setIcon(layoutMenu, 'panel-top-dashed');
 		setTooltip(layoutMenu, `Narrow-screen layout: ${layoutLabel}`);
 		layoutMenu.addEventListener('click', (event) => {
-			this.openNarrowLayoutMenu(event, path, globalResponsive);
+			this.openNarrowLayoutMenu(event, path, globalResponsive,()=>view.file?.path===path);
 		});
 		createControlDivider(reveal);
 		createSegmentedControl(reveal, {
@@ -281,7 +282,7 @@ export class StickyControlManager {
 				currentLabels.size > 1 ||
 				views.size > 1 ||
 				(columnsMode && responsiveModes.size > 1),
-			onClick: (event) => this.openMenu(event, path),
+			onClick: (event) => this.openMenu(event, path,()=>view.file?.path===path),
 		});
 	}
 
@@ -338,10 +339,12 @@ export class StickyControlManager {
 	private openMenu(
 		event: MouseEvent,
 		path: string,
+		isCurrent:()=>boolean,
 	): void {
 		const menu = new Menu();
 		menu.addItem((item) =>
 			item.setTitle('Hide note control').setIcon('x').onClick(() => {
+				if(!isCurrent()){new Notice('The note changed. Open its current controls again.');return;}
 				this.host.store.setStickyVisible(path, false);
 				new Notice(
 					`Note control hidden. Run “${SHOW_NOTE_CONTROL_COMMAND}” from the command palette to restore it.`,
@@ -355,6 +358,7 @@ export class StickyControlManager {
 		event: MouseEvent,
 		path: string,
 		activeResponsive: ResponsiveMode | undefined,
+		isCurrent:()=>boolean,
 	): void {
 		const menu = new Menu();
 		for (const responsive of NARROW_LAYOUT_OPTIONS) {
@@ -363,6 +367,7 @@ export class StickyControlManager {
 					.setTitle(responsive.label)
 					.setChecked(activeResponsive === responsive.value)
 					.onClick(() => {
+						if(!isCurrent()){new Notice('The note changed. Open its current controls again.');return;}
 						this.host.store.applyResponsiveAcrossNote(path, responsive.value);
 					}),
 			);

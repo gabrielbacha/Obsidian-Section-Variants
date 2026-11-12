@@ -1,3 +1,4 @@
+import {textChange} from './text-diff';
 import { resolveCurrentBlock } from './block-resolution';
 import { ParsedNote, VariantBlock, VariantSection } from './types';
 
@@ -28,10 +29,6 @@ export function previewChange(
 	}
 	// A renderer may omit the structural newline preceding a nested/closing fence.
 	if (before.endsWith('\n') && !after.endsWith('\n')) after += '\n';
-	let start = 0;
-	while (start < before.length && start < after.length && before[start] === after[start]) start++;
-	let end = 0;
-	while (end < before.length - start && end < after.length - start &&
-		before[before.length - end - 1] === after[after.length - end - 1]) end++;
-	return { from: range.from + start, to: range.to - end, insert: after.slice(start, after.length - end) };
+	const change=textChange(before,after);
+	return {from:range.from+change.from,to:range.from+change.to,insert:change.insert};
 }

@@ -32,7 +32,7 @@ interface CodeFence {
 }
 
 const DIV_FENCE = /^ {0,3}(:{3,})(?:[ \t]+(.+?))?[ \t]*$/u;
-const CODE_FENCE = /^ {0,3}(`{3,}|~{3,})/u;
+const CODE_FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/u;
 const BLOCK_ID = /^\^([\p{L}\p{N}-]+)$/u;
 
 export function parseNote(
@@ -66,10 +66,11 @@ export function parseNote(
 			const marker = codeMatch[1];
 			const character = marker[0] as '`' | '~';
 			if (!codeFence) {
+				if (character === '`' && codeMatch[2]?.includes('`')) continue;
 				codeFence = { character, length: marker.length };
 				continue;
 			}
-			if (codeFence.character === character && marker.length >= codeFence.length) {
+			if (codeFence.character === character && marker.length >= codeFence.length && /^[ \t]*$/u.test(codeMatch[2] ?? '')) {
 				codeFence = undefined;
 			}
 			continue;
@@ -147,8 +148,14 @@ export function parseNote(
 	}
 
 	finishUnclosedFrames(stack, source, diagnostics);
-	for (const block of blocks) validateBlock(block, lines, lineOffsets);
+	for (const block of blocks) { block.sourceSnapshot = source; validateBlock(block, lines, lineOffsets); validateGaps(block, source); }
 	validateUniqueIds(blocks);
+	for (const block of [...blocks].reverse()) {
+		if (block.children.some(child => !child.valid)) {
+			block.diagnostics.push(blockDiagnostic(block, 'invalid-nested-block', 'A nested variants block is invalid. The complete source remains visible.'));
+			block.valid = false;
+		}
+	}
 	assignIdentities(blocks);
 	diagnostics.push(...blocks.flatMap((block) => block.diagnostics));
 
@@ -461,4 +468,14 @@ function nextLineOffset(
 	fallback: number,
 ): number {
 	return lineOffsets[line + 1] ?? fallback;
+}
+
+function validateGaps(block: VariantBlock, source: string): void {
+ if(!block.closing)return;
+ let cursor=block.opening.to;
+ for(const variant of block.variants){
+  if(source.slice(cursor,variant.opening.from).trim()){block.diagnostics.push(blockDiagnostic(block,'unowned-container-text','Text outside a child variant must remain visible. Move it into a variant or outside this container.'));block.valid=false;}
+  cursor=variant.closing?.to??variant.content.to;
+ }
+ if(source.slice(cursor,block.closing.from).trim()){block.diagnostics.push(blockDiagnostic(block,'unowned-container-text','Text outside a child variant must remain visible. Move it into a variant or outside this container.'));block.valid=false;}
 }
