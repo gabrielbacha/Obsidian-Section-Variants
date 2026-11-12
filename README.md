@@ -127,7 +127,7 @@ npm run lint
 
 `npm run test:stability` checks, in real Obsidian, that content does not move while a note renders or after scrolling, that the editor height map matches the rendered widgets, that typing during autosave keeps every keystroke, and that edit protection blocks only direct user edits. Set `SECTION_VARIANTS_PLUGINS_DIR` to a plugins folder to also test Table Editor, Advanced Cursors, and Linter. On macOS both Obsidian tests start the app hidden and without focus; set `SECTION_VARIANTS_TEST_VISIBLE=1` to show it.
 
-`npm run test:obsidian` additionally tests the installed desktop app in an isolated temporary vault. Set `OBSIDIAN_EXECUTABLE` to its executable, optionally `OBSIDIAN_ASAR` to the installed update package and `OBSIDIAN_THEME_DIR` to a theme directory. It verifies in-column editing and undo, external file changes and Obsidian's own merge of concurrent edits, compares native preview markup and computed prose styles at equal widths, checks light/dark and live theme changes, and exercises preview checkbox edits. The test copies only the built plugin and optional theme into its fixture; it does not operate on existing vault windows. Native preview integration is guarded: incompatible hosts retain a static read-only preview while in-column editing remains available.
+`npm run test:obsidian` additionally tests the installed desktop app in an isolated temporary vault. Set `OBSIDIAN_EXECUTABLE` to its executable, optionally `OBSIDIAN_ASAR` to the installed update package and `OBSIDIAN_THEME_DIR` to a theme directory. It verifies in-column editing and undo, external file changes and concurrent reconciliation against ordinary native Markdown, compares native preview markup and computed prose styles at equal widths, checks light/dark and live theme changes, and exercises preview checkbox edits. The test copies only the built plugin and optional theme into its fixture; it does not operate on existing vault windows. Native preview integration is guarded: incompatible hosts retain a static read-only preview while in-column editing remains available.
 
 ## License
 
@@ -145,3 +145,5 @@ Section Variants is licensed under the [Zero-Clause BSD license](LICENSE).
     <a href="https://github.com/gabrielbacha/Obsidian-Section-Variants/issues/new?template=feature_request.yml"><strong>Request a feature</strong></a>
   </p>
 </div>
+
+Concurrent changes use Obsidian's native behavior. The runtime fixture compares a variants note with an ordinary Markdown note under the same save conditions; the plugin does not keep a separate merge ledger.
