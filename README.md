@@ -7,6 +7,8 @@ Section Variants lets you switch, compare, and manage parallel versions of a Mar
   <p>
     <a href="https://www.gabrielbacha.com/?utm_source=obsidian_community&amp;utm_medium=referral&amp;utm_campaign=obsidian_assets&amp;utm_content=section_variants_readme_header"><strong>Visit gabrielbacha.com</strong></a>
     &nbsp;·&nbsp;
+    <a href="https://www.mindfulapps.xyz/section-variants/?utm_source=obsidian_community&amp;utm_medium=referral&amp;utm_campaign=obsidian_assets&amp;utm_content=section_variants_readme_header"><strong>Visit Mindful Apps</strong></a>
+    &nbsp;·&nbsp;
     <a href="https://obsidian.md/plugins?search=Gabriel%20Bacha"><strong>Explore more Obsidian plugins</strong></a>
     &nbsp;·&nbsp;
     <a href="https://github.com/gabrielbacha/Obsidian-Section-Variants/issues/new?template=feature_request.yml"><strong>Request a feature</strong></a>
@@ -139,6 +141,8 @@ Section Variants is licensed under the [Zero-Clause BSD license](LICENSE).
   <h3>Created by <a href="https://github.com/gabrielbacha">Gabriel Bacha</a></h3>
   <p>
     <a href="https://www.gabrielbacha.com/?utm_source=obsidian_community&amp;utm_medium=referral&amp;utm_campaign=obsidian_assets&amp;utm_content=section_variants_readme_header"><strong>Visit gabrielbacha.com</strong></a>
+    &nbsp;·&nbsp;
+    <a href="https://www.mindfulapps.xyz/section-variants/?utm_source=obsidian_community&amp;utm_medium=referral&amp;utm_campaign=obsidian_assets&amp;utm_content=section_variants_readme_header"><strong>Visit Mindful Apps</strong></a>
     &nbsp;·&nbsp;
     <a href="https://obsidian.md/plugins?search=Gabriel%20Bacha"><strong>Explore more Obsidian plugins</strong></a>
     &nbsp;·&nbsp;
